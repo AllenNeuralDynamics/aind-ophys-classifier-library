@@ -1,0 +1,96 @@
+"""CLI/environment settings for ophys ROI classification.
+
+Kept import-light (pydantic + stdlib only) so it stays cheap to import, free
+of roicat / torch / aind-data-schema side effects, and discoverable by
+``auto-app-panel`` without the heavy dependencies installed.
+
+Every field name is at least two characters. The v1 argparse parser exposed
+``-i``/``-o``, which the committed app panel carried as one-character
+``param_name`` values (``i``, ``o``); pydantic-settings renders a
+one-character field as a *short* option that a Code Ocean app panel can never
+emit, so those are renamed to ``input_dir``/``output_dir`` rather than
+aliased.
+"""
+
+from pathlib import Path
+from typing import Optional
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_CLASSIFIER_DIR = "/data/2p_roi_classifier"
+
+
+class ClassifierSettings(BaseSettings, cli_parse_args=True):
+    """Settings for ROI classification using pydantic-settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CLASSIFIER_",
+        case_sensitive=False,
+        extra="ignore",
+        protected_namespaces=(),
+    )
+
+    input_dir: Path = Field(
+        default=Path("/data"),
+        description="Directory containing the extraction results to classify.",
+    )
+    output_dir: Path = Field(
+        default=Path("/results"),
+        description="Directory where output files will be saved.",
+    )
+    tmp_dir: Path = Field(
+        default=Path("/scratch"),
+        description=(
+            "Directory for temporary files, and where the ROInet network "
+            "files are unpacked. Must be writable."
+        ),
+    )
+    soma_classifier_path: Path = Field(
+        default=Path(DEFAULT_CLASSIFIER_DIR) / "soma.classification_training.autoclassifier.onnx",
+        description="Path to the soma classifier ONNX model.",
+    )
+    dendrite_classifier_path: Path = Field(
+        default=Path(DEFAULT_CLASSIFIER_DIR)
+        / "dendrite.classification_training.autoclassifier.onnx",
+        description="Path to the dendrite classifier ONNX model.",
+    )
+    model_name: Optional[str] = Field(
+        default=None,
+        description=(
+            "Identifier recorded in processing.json. Defaults to the "
+            "directory name of soma_classifier_path."
+        ),
+    )
+    border_size: int = Field(
+        default=10,
+        description=(
+            "Distance in pixels from the field-of-view border for an ROI to "
+            "be classified as a border ROI."
+        ),
+    )
+    um_per_pixel: Optional[float] = Field(
+        default=None,
+        description=(
+            "Micrometres per pixel, used to scale the ROI images fed to "
+            "ROInet. Read from the acquisition metadata when omitted; supply "
+            "it explicitly only when the metadata does not carry it, because "
+            "an incorrect value silently changes every classification."
+        ),
+    )
+    roinet_dir: Optional[Path] = Field(
+        default=None,
+        description=(
+            "Directory holding a pre-staged ROInet.zip. When set, the network "
+            "files are loaded from there instead of being downloaded, which "
+            "is required inside the pipeline where every task otherwise "
+            "re-fetches ~105 MB from osf.io."
+        ),
+    )
+    verify: bool = Field(
+        default=False,
+        description=(
+            "Round-trip the emitted processing.json and quality_control.json "
+            "through the core v2 schema objects after writing."
+        ),
+    )
