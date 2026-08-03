@@ -172,6 +172,7 @@ def _write_processing_metadata(
             input_data=ctx.get("input_data"),
             output_path=relative_to_root(results_root, output_dir),
             output_parameters=ctx.get("output_parameters"),
+            plane_id=ctx.get("unique_id"),
             resources=_resource_usage(),
             error=error,
         )
@@ -243,6 +244,7 @@ def _run_classification(
 
     for extraction_file in extraction_files:
         plane = classification.prepare_plane(extraction_file, results_root)
+        ctx["unique_id"] = plane.name
         ctx["output_dir"] = plane.output_dir
         ctx["input_data"] = [
             relative_to_root(input_dir, extraction_file),

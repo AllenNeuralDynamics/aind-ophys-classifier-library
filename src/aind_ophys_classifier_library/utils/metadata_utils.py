@@ -266,6 +266,7 @@ def build_data_process(
     input_data: Optional[List[str]] = None,
     output_path: Optional[str] = None,
     output_parameters: Optional[dict] = None,
+    plane_id: Optional[str] = None,
     resources=None,
     error: Optional[BaseException] = None,
 ) -> DataProcess:
@@ -286,6 +287,9 @@ def build_data_process(
         root.
     output_parameters : dict, optional
         Actual parameters used and output metrics.
+    plane_id : str, optional
+        Plane/FOV id this run processed. Qualifies the process name so it
+        stays unique once every plane's document is merged.
     resources : ResourceUsage, optional
         Host resource usage; defaults to the shared CPU-only builder. The
         classifier is the pipeline's only GPU process, so the caller passes
@@ -309,6 +313,7 @@ def build_data_process(
     )
     return shared_processing.build_data_process(
         process_type=ProcessName.IMAGE_CELL_CLASSIFICATION,
+        plane_id=plane_id,
         code=code,
         start_time=start_time.astimezone(_SEATTLE_TZ),
         end_time=end_time.astimezone(_SEATTLE_TZ),
