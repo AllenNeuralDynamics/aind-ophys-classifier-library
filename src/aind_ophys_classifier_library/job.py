@@ -6,29 +6,29 @@ classify its ROIs -> write the classification HDF5, the overlay figures and
 the combined figure -> emit a full ``processing.json`` and
 ``quality_control.json`` per plane.
 
-``processing.json`` is written from a ``finally`` block so a failed run still
-leaves a document describing what was attempted, with the error recorded in
-``notes``.
+``processing.json`` is written by the shared ``stage_guard``, so a failed run
+still leaves a document describing what was attempted, with the error recorded
+in ``notes``. Each plane gets its own guard, and a failure before any plane is
+known writes one document at the results root.
 
 In the pipeline this capsule is flattened (one task per plane), so the loop
 normally runs once; a standalone capsule run may mount several planes.
 """
 
 import logging
-from datetime import datetime as dt
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 from aind_data_schema.core.processing import ResourceUsage
-from aind_pophys_metadata import processing as shared_processing
+from aind_pophys_metadata.paths import relative_to_root
 from log_schema.main import setup_logging
 
 from . import classification, plots, qc
 from .settings import ClassifierSettings
 from .utils import image_utils
 from .utils import metadata_utils as mu
-from .utils.paths import relative_to_root
 
 logger = logging.getLogger("Ophys classification")
 
@@ -45,18 +45,12 @@ def _verify_outputs(output_dir: Path) -> None:
     QualityControl.model_validate_json((Path(output_dir) / "quality_control.json").read_text())
 
 
-def _resource_usage() -> ResourceUsage:
-    """Host resources, including the GPU the shared builder omits."""
-    usage = shared_processing.resource_usage()
+def _with_gpu(resources: ResourceUsage) -> ResourceUsage:
+    """Add the active GPU name to the guard's static resource capture."""
     gpu = classification.gpu_name()
     if gpu is None:
-        return usage
-    return ResourceUsage(
-        os=usage.os,
-        architecture=usage.architecture,
-        cpu_cores=usage.cpu_cores,
-        gpu=gpu,
-    )
+        return resources
+    return resources.model_copy(update={"gpu": gpu})
 
 
 def _save(figure, path: Path) -> None:
@@ -150,37 +144,6 @@ def _collect_metrics(
     ]
 
 
-def _write_processing_metadata(
-    settings: ClassifierSettings,
-    ctx: dict,
-    start_time: dt,
-    error: Optional[BaseException],
-) -> None:
-    """Best-effort writer for processing.json. Never raises.
-
-    Failures here must not mask a run failure already propagating out of
-    ``run()``. Falls back to the results root when the run failed before any
-    per-plane output directory was created.
-    """
-    results_root = settings.output_dir.resolve()
-    output_dir = ctx.get("output_dir") or results_root
-    try:
-        data_process = mu.build_data_process(
-            parameters=ctx.get("parameters") or {},
-            start_time=start_time,
-            end_time=dt.now(),
-            input_data=ctx.get("input_data"),
-            output_path=relative_to_root(results_root, output_dir),
-            output_parameters=ctx.get("output_parameters"),
-            plane_id=ctx.get("unique_id"),
-            resources=_resource_usage(),
-            error=error,
-        )
-        mu.write_processing_json(mu.build_processing([data_process]), output_dir)
-    except Exception as proc_exc:
-        logger.error(f"processing.json write failed (non-fatal): {proc_exc}")
-
-
 def _run_parameters(
     settings: ClassifierSettings,
     metadata: mu.ClassifierMetadata,
@@ -204,6 +167,35 @@ def _run_parameters(
     }
 
 
+def _output_parameters(result: dict, border) -> dict:
+    """Summarise this plane's classification outputs for QC triage.
+
+    ``DataProcess.output_parameters`` carries scalar summary statistics
+    describing the outputs this step produced, chosen so a reviewer can triage
+    a plane without opening the classification HDF5. It is deliberately not a
+    record of the run's *input* parameters — those belong on
+    ``code.parameters``, and conflating the two is how the field rots.
+
+    Parameters
+    ----------
+    result : dict
+        Output of :func:`classification.classify_plane`.
+    border : numpy.ndarray
+        Boolean per-ROI border flags.
+
+    Returns
+    -------
+    dict
+        ROI counts: total, soma-positive, dendrite-positive and border.
+    """
+    return {
+        "num_rois": int(len(result["soma_predictions"])),
+        "num_soma": int(result["soma_predictions"].sum()),
+        "num_dendrite": int(result["dendrite_predictions"].sum()),
+        "num_border": int(border.sum()),
+    }
+
+
 def _require_classifiers(settings: ClassifierSettings) -> None:
     """Fail fast when either ONNX model is missing, naming which."""
     for label, path in (
@@ -214,51 +206,128 @@ def _require_classifiers(settings: ClassifierSettings) -> None:
             raise FileNotFoundError(f"{label} classifier ONNX not found: {path}")
 
 
-def _run_classification(
-    settings: ClassifierSettings,
-    metadata: mu.ClassifierMetadata,
-    ctx: dict,
-) -> None:
-    """Classify every mounted plane and write all outputs.
+@dataclass(frozen=True)
+class _Prepared:
+    """Everything resolved once, before any plane is classified.
 
-    ``ctx`` is populated as the run progresses so the ``processing.json``
-    writer in ``run()``'s ``finally`` can report partial provenance even when
-    this raises.
+    Attributes
+    ----------
+    metadata : mu.ClassifierMetadata
+        The acquisition metadata view.
+    planes : tuple of classification.Plane
+        Every mounted plane, in deterministic order.
+    parameters : dict
+        Run parameters recorded on each plane's ``Code`` block.
+    soma_classifier : callable
+        The loaded soma ONNX classifier.
+    dendrite_classifier : callable
+        The loaded dendrite ONNX classifier.
+    network_files_dir : Path
+        Directory holding or receiving the ROInet archive.
+    download_method : str
+        ROInet download method.
     """
-    results_root = settings.output_dir.resolve()
-    input_dir = settings.input_dir.resolve()
+
+    metadata: mu.ClassifierMetadata
+    planes: Tuple[classification.Plane, ...]
+    parameters: dict
+    soma_classifier: object
+    dendrite_classifier: object
+    network_files_dir: Path
+    download_method: str
+
+
+def _prepare(settings: ClassifierSettings) -> _Prepared:
+    """Read metadata, configure logging, and resolve every shared input.
+
+    Everything that a plane's classification depends on is resolved here, so
+    a per-plane stage guard covers the whole of the work that can fail once a
+    plane is known.
+    """
+    metadata = mu.load_classifier_metadata(settings.input_dir, settings.um_per_pixel)
+    setup_logging(
+        use_cloudwatch=True,
+        model={
+            "acquisition_name": metadata.dataset_name or metadata.subject_id,
+            "process_name": PROCESS_NAME,
+        },
+    )
+    logger.info("Starting classification")
+    logger.info(
+        "Resolved %s um/pixel from %s",
+        metadata.um_per_pixel,
+        metadata.um_per_pixel_source,
+    )
 
     _require_classifiers(settings)
     model_name = settings.model_name or settings.soma_classifier_path.parent.name
-    parameters = _run_parameters(settings, metadata, model_name)
-    ctx["parameters"] = parameters
-
     network_files_dir, download_method = classification.resolve_network_files_dir(
         settings.tmp_dir, settings.roinet_dir
     )
-    soma_classifier = classification.load_onnx_classifier(settings.soma_classifier_path)
-    dendrite_classifier = classification.load_onnx_classifier(settings.dendrite_classifier_path)
 
+    input_dir = settings.input_dir.resolve()
+    results_root = settings.output_dir.resolve()
     extraction_files = classification.find_extraction_files(input_dir)
-    logger.info("Classifying %s plane(s)", len(extraction_files))
+    planes = tuple(
+        classification.prepare_plane(extraction_file, results_root)
+        for extraction_file in extraction_files
+    )
+    # Plane ids come from the input directory layout; the canonical ids are
+    # only advisory here, so a divergence warns and the run continues.
+    mu.validate_plane_ids(input_dir, [plane.name for plane in planes], logger)
+    logger.info("Classifying %s plane(s)", len(planes))
 
-    for extraction_file in extraction_files:
-        plane = classification.prepare_plane(extraction_file, results_root)
-        ctx["unique_id"] = plane.name
-        ctx["output_dir"] = plane.output_dir
-        ctx["input_data"] = [
-            relative_to_root(input_dir, extraction_file),
+    return _Prepared(
+        metadata=metadata,
+        planes=planes,
+        parameters=_run_parameters(settings, metadata, model_name),
+        soma_classifier=classification.load_onnx_classifier(settings.soma_classifier_path),
+        dendrite_classifier=classification.load_onnx_classifier(
+            settings.dendrite_classifier_path
+        ),
+        network_files_dir=network_files_dir,
+        download_method=download_method,
+    )
+
+
+def _classify_plane(
+    settings: ClassifierSettings,
+    prepared: _Prepared,
+    plane: classification.Plane,
+) -> None:
+    """Classify one plane inside its own stage guard.
+
+    The guard writes the plane's ``processing.json`` on the way out whether or
+    not this raised, so a failed plane still leaves a document naming what was
+    attempted and why it stopped.
+    """
+    results_root = settings.output_dir.resolve()
+    input_dir = settings.input_dir.resolve()
+    code = mu.build_classification_code(
+        prepared.parameters,
+        input_data=[
+            relative_to_root(input_dir, plane.input_extraction_file),
             CLASSIFIER_ASSET_NAME,
-        ]
+        ],
+    )
+    with mu.classification_stage(
+        plane.output_dir,
+        code,
+        plane_id=plane.name,
+        output_path=relative_to_root(results_root, plane.output_dir),
+        input_dir=input_dir,
+        logger=logger,
+    ) as stage:
+        stage.resources = _with_gpu(stage.resources)
 
-        rois = classification.load_extraction_rois(extraction_file)
+        rois = classification.load_extraction_rois(plane.input_extraction_file)
         result = classification.classify_plane(
             rois=rois,
-            um_per_pixel=metadata.um_per_pixel,
-            soma_classifier=soma_classifier,
-            dendrite_classifier=dendrite_classifier,
-            network_files_dir=network_files_dir,
-            download_method=download_method,
+            um_per_pixel=prepared.metadata.um_per_pixel,
+            soma_classifier=prepared.soma_classifier,
+            dendrite_classifier=prepared.dendrite_classifier,
+            network_files_dir=prepared.network_files_dir,
+            download_method=prepared.download_method,
         )
         result["rois"] = rois
         border = classification.classify_border_rois(rois, settings.border_size)
@@ -266,12 +335,7 @@ def _run_classification(
         figure_paths = _write_figures(plane, result, border)
         classification.write_classification_h5(plane, result, border)
 
-        ctx["output_parameters"] = {
-            "num_rois": int(len(result["soma_predictions"])),
-            "num_soma": int(result["soma_predictions"].sum()),
-            "num_dendrite": int(result["dendrite_predictions"].sum()),
-            "num_border": int(border.sum()),
-        }
+        stage.output_parameters = _output_parameters(result, border)
         metrics = _collect_metrics(
             plane,
             result,
@@ -281,8 +345,7 @@ def _run_classification(
             results_root,
         )
         qc.write_quality_control_json(qc.build_quality_control(metrics), plane.output_dir)
-        _write_processing_metadata(settings, ctx, ctx["start_time"], None)
-        logger.info("Wrote classification outputs for %s", plane.name)
+    logger.info("Wrote classification outputs for %s", plane.name)
 
 
 def run(settings: Optional[ClassifierSettings] = None) -> None:
@@ -296,39 +359,24 @@ def run(settings: Optional[ClassifierSettings] = None) -> None:
         through the core v2 schema objects after writing.
     """
     settings = settings or ClassifierSettings()
-    start_time = dt.now()
-
-    metadata = mu.load_classifier_metadata(settings.input_dir, settings.um_per_pixel)
-    setup_logging(
-        use_cloudwatch=True,
-        model={
-            "acquisition_name": metadata.dataset_name or metadata.subject_id,
-            "process_name": PROCESS_NAME,
-        },
-    )
-    logger.info("Starting classification", extra={"event_type": "stage_start"})
-    logger.info(
-        "Resolved %s um/pixel from %s",
-        metadata.um_per_pixel,
-        metadata.um_per_pixel_source,
-    )
-
-    ctx: dict = {"start_time": start_time}
     try:
-        _run_classification(settings, metadata, ctx)
-        logger.info(
-            "Classification complete",
-            extra={"event_type": "stage_complete"},
-        )
-    except BaseException as exc:
-        logger.error("Classification failed", extra={"event_type": "stage_error"})
+        prepared = _prepare(settings)
+    except BaseException:
+        logger.error("Classification failed")
         logger.exception("Unhandled exception")
-        # Written here rather than in a `finally`: each plane writes its own
-        # processing.json as it completes, so a single trailing write would
-        # only ever describe the last plane. On failure this records the plane
-        # that was in flight, with the error in `notes`.
-        _write_processing_metadata(settings, ctx, start_time, exc)
-        raise
+        # No plane is known yet, so the guard writes one document at the
+        # results root; re-raising inside it is what records the error.
+        with mu.classification_stage(
+            settings.output_dir.resolve(),
+            mu.build_classification_code({}),
+            input_dir=settings.input_dir.resolve(),
+            logger=logger,
+        ):
+            raise
+
+    for plane in prepared.planes:
+        _classify_plane(settings, prepared, plane)
+    logger.info("Classification complete")
 
     if settings.verify:
-        _verify_outputs(ctx["output_dir"])
+        _verify_outputs(prepared.planes[-1].output_dir)

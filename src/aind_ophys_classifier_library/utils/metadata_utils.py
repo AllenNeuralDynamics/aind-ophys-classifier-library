@@ -2,9 +2,10 @@
 
 A thin, capsule-specific layer over the shared ``aind_pophys_metadata``
 library. The shared library owns schema-version dispatch, the identifier
-getters and the ``Processing`` builders; this module adds the one field it
-does not provide — micrometres per pixel — and assembles the
-``ClassifierMetadata`` view.
+getters, the ``Processing`` builders and the stage guard that writes
+``processing.json``; this module adds the one field it does not provide —
+micrometres per pixel — assembles the ``ClassifierMetadata`` view, and binds
+the guard to this capsule's process type and code identity.
 
 **Why the µm/px readers live here.** v1 stored it directly as
 ``ophys_fovs[*].fov_scale_factor`` plus a ``fov_scale_factor_unit`` string. v2
@@ -14,31 +15,28 @@ removed both: the scale is a ``Scale`` entry inside
 getter for either shape and must not be modified, so both live here.
 """
 
-import os
+import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime as dt
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Iterator, List, Optional
 
-import pytz
 from aind_data_schema.components.configs import (
     ImagingConfig,
     PlanarImage,
     PlanarImageStack,
 )
 from aind_data_schema.components.coordinates import Scale
-from aind_data_schema.core.processing import DataProcess, Processing
+from aind_data_schema.components.identifiers import Code
 from aind_data_schema_models.process_names import ProcessName
 from aind_pophys_metadata import fields, io
 from aind_pophys_metadata import processing as shared_processing
+from aind_pophys_metadata.runner import StageContext, stage_guard
 from pint import UnitRegistry
 
-from aind_ophys_classifier_library import __version__
-
-_SEATTLE_TZ = pytz.timezone("America/Los_Angeles")
-
-CODE_URL = "https://github.com/AllenNeuralDynamics/aind-ophys-classifier"
 PROCESS_NAME = "aind-ophys-classifier"
+LIBRARY_NAME = "aind-ophys-classifier-library"
+PROCESS_TYPE = ProcessName.IMAGE_CELL_CLASSIFICATION
 
 MICRONS_PER_PIXEL = "um/pixel"
 
@@ -72,7 +70,6 @@ class ClassifierMetadata:
     instrument_id: Optional[str] = None
     subject_id: Optional[str] = None
     dataset_name: Optional[str] = None
-    fov_ids: Tuple[str, ...] = ()
 
 
 def get_um_per_pixel_v1(session: dict) -> Optional[float]:
@@ -199,15 +196,10 @@ def load_classifier_metadata(
         If both core files are present (ambiguous input), or if µm/pixel
         cannot be resolved and no override was supplied.
     """
-    input_dir = Path(input_dir)
-    core_path = io.find_acquisition_file(input_dir)
-    version = io.detect_schema_version(core_path)
-    core_raw = io.load_json(core_path)
-
-    subject_path = io.find(input_dir, "subject.json")
-    subject_raw = io.load_json(subject_path) if subject_path else None
-    dd_path = io.find(input_dir, "data_description.json")
-    dd_raw = io.load_json(dd_path) if dd_path else None
+    common = io.load_common(Path(input_dir))
+    core_path = common.core_path
+    version = common.version
+    core_raw = common.core_raw
 
     if um_per_pixel_override is not None:
         um_per_pixel = float(um_per_pixel_override)
@@ -235,113 +227,152 @@ def load_classifier_metadata(
         um_per_pixel=um_per_pixel,
         um_per_pixel_source=source,
         instrument_id=fields.get_instrument_id(version, core_raw),
-        subject_id=fields.get_subject_id(core_raw, subject_raw),
-        dataset_name=fields.get_dataset_name(dd_raw),
-        fov_ids=fields.get_fov_ids(version, core_raw),
+        subject_id=fields.get_subject_id(core_raw, common.subject_raw),
+        dataset_name=fields.get_dataset_name(common.data_description_raw),
     )
 
 
-def code_version() -> str:
-    """Return the version recorded on the ``Code`` block.
+def validate_plane_ids(
+    input_dir: Path,
+    scavenged_ids: List[str],
+    logger: Optional[logging.Logger] = None,
+) -> bool:
+    """Warn when plane ids taken from directory names are not canonical.
 
-    aind-data-schema warns when a ``Code`` carries neither ``commit_hash`` nor
-    ``version``, and says it will require one in future. The library version is
-    the fallback rather than the empty string a bare
-    ``os.getenv("VERSION", "")`` yields wherever the capsule image does not set
-    ``VERSION``. Only one of the two may be set, and the shared builder takes
-    ``version``.
+    This capsule scavenges its plane ids from the layout of the extraction
+    output (``<plane>/extraction/<plane>_extraction.h5``) rather than from the
+    acquisition metadata. Uniqueness is the hard requirement and directory
+    names already guarantee it, so a divergence from the canonical ids is
+    reported and never raised.
+
+    The core file is re-read here rather than carried on
+    :class:`ClassifierMetadata`, because the scavenged ids are only known once
+    the input tree has been walked, and a field that exists solely to be
+    passed back in is the kind that silently rots.
+
+    Parameters
+    ----------
+    input_dir : Path
+        Capsule input directory holding the acquisition metadata.
+    scavenged_ids : list of str
+        Plane ids recovered from the input directory layout.
+    logger : logging.Logger, optional
+        Logger the divergence warning is emitted on.
 
     Returns
     -------
-    str
-        The ``VERSION`` environment value, or this library's version.
+    bool
+        ``True`` when the scavenged ids match the canonical ids.
     """
-    return os.getenv("VERSION") or __version__
+    common = io.load_common(Path(input_dir))
+    canonical = fields.get_fov_ids(common.version, common.core_raw)
+    return fields.validate_scavenged_ids(scavenged_ids, canonical, logger)
 
 
-def build_data_process(
+def build_classification_code(
     parameters: dict,
-    start_time: dt,
-    end_time: dt,
     input_data: Optional[List[str]] = None,
-    output_path: Optional[str] = None,
-    output_parameters: Optional[dict] = None,
-    plane_id: Optional[str] = None,
-    resources=None,
-    error: Optional[BaseException] = None,
-) -> DataProcess:
-    """Construct a v2 DataProcess for ROI classification.
+) -> Code:
+    """Construct the ``Code`` block recorded on the classification process.
+
+    ``url`` and ``version`` are both derived by the shared builder from
+    ``LIBRARY_NAME``: this library's landing page and its installed released
+    version, so the two always describe the same artifact.
 
     Parameters
     ----------
     parameters : dict
         Resolved run parameters recorded on the code block.
-    start_time : dt
-        Processing start time.
-    end_time : dt
-        Processing end time.
     input_data : list of str, optional
         Input data path(s)/asset name(s) for provenance.
-    output_path : str, optional
-        Path to this process's output directory, relative to the results
-        root.
-    output_parameters : dict, optional
-        Actual parameters used and output metrics.
-    plane_id : str, optional
-        Plane/FOV id this run processed. Qualifies the process name so it
-        stays unique once every plane's document is merged.
-    resources : ResourceUsage, optional
-        Host resource usage; defaults to the shared CPU-only builder. The
-        classifier is the pipeline's only GPU process, so the caller passes
-        a GPU-aware value.
-    error : Exception, optional
-        The exception that terminated the run, or ``None`` on success. Its
-        message is recorded in ``notes``.
 
     Returns
     -------
-    DataProcess
-        The populated classification data process.
+    Code
+        The populated code block.
     """
-    notes = None if error is None else f"Run failed with {type(error).__name__}: {error}"
-    code = shared_processing.build_code(
-        url=CODE_URL,
+    return shared_processing.build_code(
         name=PROCESS_NAME,
-        version=code_version(),
+        library_name=LIBRARY_NAME,
         parameters=parameters,
         input_data=input_data,
     )
-    return shared_processing.build_data_process(
-        process_type=ProcessName.IMAGE_CELL_CLASSIFICATION,
-        plane_id=plane_id,
-        code=code,
-        start_time=start_time.astimezone(_SEATTLE_TZ),
-        end_time=end_time.astimezone(_SEATTLE_TZ),
-        output_path=output_path,
-        output_parameters=output_parameters,
-        notes=notes,
-        resources=resources or shared_processing.resource_usage(),
-    )
 
 
-def build_processing(data_processes: List[DataProcess]) -> Processing:
-    """Wrap data processes into a full v2 Processing object."""
-    return shared_processing.build_processing(data_processes)
-
-
-def write_processing_json(processing: Processing, output_dir: Path) -> Path:
-    """Serialize a Processing object to ``processing.json``.
+def process_name(plane_id: Optional[str] = None) -> str:
+    """Return the ``DataProcess.name`` the shared builder will compose.
 
     Parameters
     ----------
-    processing : Processing
-        The processing document to write.
-    output_dir : Path
-        Directory into which ``processing.json`` is written.
+    plane_id : str, optional
+        Plane/FOV id for a per-plane run; omitted for a run that never
+        reached a plane.
 
     Returns
     -------
-    Path
-        The path written.
+    str
+        The composed process name.
     """
-    return shared_processing.write_processing_json(processing, output_dir)
+    base = PROCESS_TYPE.value
+    return f"{plane_id}: {base}" if plane_id else base
+
+
+@contextmanager
+def classification_stage(
+    output_dir: Path,
+    code: Code,
+    *,
+    plane_id: Optional[str] = None,
+    output_path: Optional[str] = None,
+    input_dir: Optional[Path] = None,
+    logger: Optional[logging.Logger] = None,
+) -> Iterator[StageContext]:
+    """Wrap one classification stage in the shared :func:`stage_guard`.
+
+    The guard stamps the timings, captures static resources and writes
+    ``processing.json`` on the way out whether or not the body raised, with
+    the error recorded in ``notes``. This wrapper adds the two capsule-level
+    decisions: the process type, and the sibling upstream dependencies read
+    out of the input directory.
+
+    Every ``processing.json`` staged into ``input_dir`` is treated as a flat
+    sibling upstream — no ordering and no parent/grandparent distinction —
+    with this process's own name excluded so a step cannot depend on itself.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Directory the ``processing.json`` is written to.
+    code : Code
+        The code block (see :func:`build_classification_code`).
+    plane_id : str, optional
+        Plane/FOV id, which qualifies the process name so it stays unique
+        once every plane's document is merged.
+    output_path : str, optional
+        This stage's output directory relative to the results root.
+    input_dir : Path, optional
+        Capsule input directory, searched for upstream ``processing.json``
+        documents. Omitted when the run failed before it was known.
+    logger : logging.Logger, optional
+        Logger for the stage lifecycle lines.
+
+    Yields
+    ------
+    StageContext
+        Handle the body records output parameters and resources on.
+    """
+    with stage_guard(
+        output_dir,
+        PROCESS_TYPE,
+        code,
+        plane_id=plane_id,
+        output_path=output_path,
+        logger=logger,
+    ) as context:
+        if input_dir is not None:
+            context.upstream_names = (
+                shared_processing.collect_upstream_process_names(
+                    input_dir, exclude=process_name(plane_id)
+                )
+            )
+        yield context
