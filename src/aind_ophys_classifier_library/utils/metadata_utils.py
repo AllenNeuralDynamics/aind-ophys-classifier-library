@@ -266,7 +266,20 @@ def validate_plane_ids(
     """
     common = io.load_common(Path(input_dir))
     canonical = fields.get_fov_ids(common.version, common.core_raw)
-    return fields.validate_scavenged_ids(scavenged_ids, canonical, logger)
+    # SINGLE mode checks membership, not set equality. This capsule runs one
+    # task per plane, so it scavenges one id while get_fov_ids returns all of
+    # them; the default ALL mode compared the two as sets and warned on every
+    # plane of every multiplane run (8 warnings in run bb739583, the only
+    # source of them in the whole fleet). A warning that always fires is one
+    # nobody reads.
+    mode = (
+        fields.SCAVENGE_MODE_SINGLE
+        if len(list(scavenged_ids)) == 1
+        else fields.SCAVENGE_MODE_ALL
+    )
+    return fields.validate_scavenged_ids(
+        scavenged_ids, canonical, logger, mode=mode
+    )
 
 
 def build_classification_code(

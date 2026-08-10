@@ -6,6 +6,7 @@ prediction without erroring, so absence must raise.
 """
 
 import json
+import logging
 import os
 import tempfile
 import unittest
@@ -374,3 +375,42 @@ class TestClassificationStage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPlaneIdWarningNoise(unittest.TestCase):
+    """One plane against all canonical ids must not warn.
+
+    Regression for run bb739583, which emitted eight identical
+    "Scavenged plane ids ... are not consistent" warnings -- one per plane --
+    because this capsule compared its single scavenged id against the full
+    canonical set as a SET. Every multiplane run produced guaranteed noise.
+    """
+
+    def _input_dir(self, tmp: str) -> Path:
+        """Write a multiplane v1 session fixture and return its directory."""
+        input_dir = Path(tmp)
+        (input_dir / "session.json").write_text(
+            json.dumps(fixtures.v1_session())
+        )
+        return input_dir
+
+    def test_single_canonical_plane_is_silent(self):
+        """A canonical id seen alone is not a divergence."""
+        with tempfile.TemporaryDirectory() as tmp:
+            input_dir = self._input_dir(tmp)
+            canonical = mu.fields.get_fov_ids(
+                "v1", json.loads((input_dir / "session.json").read_text())
+            )
+            logger = logging.getLogger("silent-check")
+            with self.assertNoLogs(logger, level=logging.WARNING):
+                ok = mu.validate_plane_ids(input_dir, [canonical[0]], logger)
+        self.assertTrue(ok)
+
+    def test_non_canonical_single_plane_still_warns(self):
+        """The check must not be silenced into uselessness."""
+        with tempfile.TemporaryDirectory() as tmp:
+            input_dir = self._input_dir(tmp)
+            logger = logging.getLogger("divergence-check")
+            with self.assertLogs(logger, level=logging.WARNING):
+                ok = mu.validate_plane_ids(input_dir, ["NOT_A_PLANE"], logger)
+        self.assertFalse(ok)
