@@ -10,6 +10,7 @@ from aind_data_schema.core.quality_control import (
 )
 
 from aind_ophys_classifier_library import qc
+from tests.fixtures import border_flags, predictions
 
 PLANE = "VISp_0"
 COMBINED = "VISp_0/classification/VISp_0_combined_classifications.png"
@@ -22,9 +23,9 @@ class TestRoiLabels(unittest.TestCase):
     def test_all_four_combinations(self):
         """soma, dendrite, both and neither are all distinguishable."""
         labels = qc.roi_labels(
-            soma_predictions=[1, 0, 1, 0],
-            dendrite_predictions=[0, 1, 1, 0],
-            border_labels=[False, False, False, False],
+            soma_predictions=predictions(1, 0, 1, 0),
+            dendrite_predictions=predictions(0, 1, 1, 0),
+            border_labels=border_flags(False, False, False, False),
         )
         self.assertEqual(
             labels,
@@ -38,18 +39,21 @@ class TestRoiLabels(unittest.TestCase):
 
     def test_border_suffix(self):
         """A border ROI keeps its class label and gains a suffix."""
-        labels = qc.roi_labels([1], [0], [True])
+        labels = qc.roi_labels(predictions(1), predictions(0), border_flags(True))
         self.assertEqual(labels, [qc.LABEL_SOMA + qc.BORDER_SUFFIX])
 
     def test_length_mismatch_raises(self):
         """Mismatched lengths would misalign labels from ROIs."""
         with self.assertRaises(ValueError) as ctx:
-            qc.roi_labels([1, 0], [1], [False, False])
+            qc.roi_labels(predictions(1, 0), predictions(1), border_flags(False, False))
         self.assertIn("same length", str(ctx.exception))
 
     def test_empty_is_allowed(self):
         """A plane with no ROIs yields no labels rather than raising."""
-        self.assertEqual(qc.roi_labels([], [], []), [])
+        self.assertEqual(
+            qc.roi_labels(predictions(), predictions(), border_flags()),
+            [],
+        )
 
 
 class TestDropdownMetrics(unittest.TestCase):
@@ -80,7 +84,11 @@ class TestCurationMetric(unittest.TestCase):
 
     def _metric(self):
         """Build a curation metric over three ROIs."""
-        labels = qc.roi_labels([1, 0, 1], [0, 1, 1], [False, True, False])
+        labels = qc.roi_labels(
+            predictions(1, 0, 1),
+            predictions(0, 1, 1),
+            border_flags(False, True, False),
+        )
         return qc.build_roi_label_curation_metric(PLANE, labels, COMBINED)
 
     def test_is_core_curation_metric(self):
@@ -136,15 +144,20 @@ class TestQualityControlDocument(unittest.TestCase):
 
     def _metrics(self):
         """Build the whole per-plane metric set."""
-        labels = qc.roi_labels([1, 0], [0, 1], [False, True])
+        soma = predictions(1, 0)
+        dendrite = predictions(0, 1)
+        border = border_flags(False, True)
+        labels = qc.roi_labels(soma, dendrite, border)
         return [
             qc.build_classification_metric(PLANE, COMBINED),
             qc.build_border_roi_metric(PLANE, BORDER),
             qc.build_roi_label_curation_metric(PLANE, labels, COMBINED),
-            qc.build_roi_count_metric(PLANE, 2, COMBINED),
-            qc.build_positive_count_metric(PLANE, "Soma", 1, 2, COMBINED),
-            qc.build_positive_count_metric(PLANE, "Dendrite", 1, 2, COMBINED),
-            qc.build_border_count_metric(PLANE, 1, 10, BORDER),
+            qc.build_roi_count_metric(PLANE, len(soma), COMBINED),
+            qc.build_positive_count_metric(PLANE, "Soma", int(soma.sum()), len(soma), COMBINED),
+            qc.build_positive_count_metric(
+                PLANE, "Dendrite", int(dendrite.sum()), len(dendrite), COMBINED
+            ),
+            qc.build_border_count_metric(PLANE, int(border.sum()), 10, BORDER),
         ]
 
     def test_all_metrics_share_one_evaluation_group(self):

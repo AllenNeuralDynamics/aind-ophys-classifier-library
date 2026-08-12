@@ -20,7 +20,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import numpy as np
+
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 from aind_data_schema.core.processing import ResourceUsage
 from aind_pophys_metadata.paths import relative_to_root
 from log_schema.main import setup_logging
@@ -29,6 +32,7 @@ from . import classification, plots, qc
 from .settings import ClassifierSettings
 from .utils import image_utils
 from .utils import metadata_utils as mu
+from .utils import model_utils
 
 logger = logging.getLogger("Ophys classification")
 
@@ -53,13 +57,15 @@ def _with_gpu(resources: ResourceUsage) -> ResourceUsage:
     return resources.model_copy(update={"gpu": gpu})
 
 
-def _save(figure, path: Path) -> None:
+def _save(figure: Figure, path: Path) -> None:
     """Write a matplotlib figure and close it."""
     figure.savefig(str(path), bbox_inches="tight")
     plt.close(figure)
 
 
-def _write_figures(plane: classification.Plane, result: dict, border) -> dict:
+def _write_figures(
+    plane: classification.Plane, result: dict, border: np.ndarray
+) -> dict:
     """Write the four overlay figures plus the combined figure.
 
     Returns
@@ -114,7 +120,7 @@ def _write_figures(plane: classification.Plane, result: dict, border) -> dict:
 def _collect_metrics(
     plane: classification.Plane,
     result: dict,
-    border,
+    border: np.ndarray,
     figure_paths: dict,
     border_size: int,
     results_root: Path,
@@ -167,7 +173,7 @@ def _run_parameters(
     }
 
 
-def _output_parameters(result: dict, border) -> dict:
+def _output_parameters(result: dict, border: np.ndarray) -> dict:
     """Summarise this plane's classification outputs for QC triage.
 
     ``DataProcess.output_parameters`` carries scalar summary statistics
@@ -330,6 +336,13 @@ def _classify_plane(
             download_method=prepared.download_method,
         )
         result["rois"] = rois
+        # Recorded after the embedding: in the download branch the ROInet
+        # archive and the ConvNeXt checkpoint do not exist until then.
+        stage.parameters = {
+            "model_files": model_utils.model_provenance_records(
+                prepared.network_files_dir, prepared.download_method
+            )
+        }
         border = classification.classify_border_rois(rois, settings.border_size)
 
         figure_paths = _write_figures(plane, result, border)

@@ -14,19 +14,24 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import h5py
 import numpy as np
 import roicat
 import sparse
 
+from .utils.model_utils import (
+    DOWNLOAD_CHECK_LOCAL_FIRST,
+    DOWNLOAD_FORCE_LOCAL,
+    ROINET_ZIP,
+)
+
 logger = logging.getLogger(__name__)
 
 EXTRACTION_H5_GLOB = "*extraction.h5"
 CLASSIFICATION_SUBDIR = "classification"
 
-ROINET_ZIP = "ROInet.zip"
 ROINET_URL = "https://osf.io/c8m3b/download"
 ROINET_MD5 = "357a8d9b630ec79f3e015d0056a4c2d5"
 ROI_IMAGE_SIZE = (36, 36)
@@ -206,7 +211,7 @@ def resolve_network_files_dir(
         staged = Path(roinet_dir) / ROINET_ZIP
         if staged.is_file():
             logger.info("Using pre-staged ROInet weights at %s; no download.", staged)
-            return Path(roinet_dir), "force_local"
+            return Path(roinet_dir), DOWNLOAD_FORCE_LOCAL
         raise FileNotFoundError(
             f"roinet_dir was set to {roinet_dir} but {staged} does not "
             f"exist. Either stage {ROINET_ZIP} there or leave roinet_dir "
@@ -222,10 +227,12 @@ def resolve_network_files_dir(
         tmp_dir,
         ROINET_ZIP,
     )
-    return Path(tmp_dir), "check_local_first"
+    return Path(tmp_dir), DOWNLOAD_CHECK_LOCAL_FIRST
 
 
-def build_roinet_embedder(network_files_dir: Path, download_method: str):
+def build_roinet_embedder(
+    network_files_dir: Path, download_method: str
+) -> "roicat.ROInet.ROInet_embedder":
     """Construct the ROInet embedder.
 
     Parameters
@@ -253,7 +260,9 @@ def build_roinet_embedder(network_files_dir: Path, download_method: str):
     )
 
 
-def load_onnx_classifier(path: Path):
+def load_onnx_classifier(
+    path: Path,
+) -> "roicat.classification.classifier.ONNX_model_sklearnLogisticRegression":
     """Load an ONNX logistic-regression classifier.
 
     Parameters
@@ -274,8 +283,8 @@ def load_onnx_classifier(path: Path):
 def classify_plane(
     rois: np.ndarray,
     um_per_pixel: float,
-    soma_classifier,
-    dendrite_classifier,
+    soma_classifier: Callable,
+    dendrite_classifier: Callable,
     network_files_dir: Path,
     download_method: str,
 ) -> dict:

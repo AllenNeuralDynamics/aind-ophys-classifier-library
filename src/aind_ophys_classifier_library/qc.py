@@ -13,7 +13,7 @@ grouping is now carried by every metric's ``evaluation`` tag, matching
 
 from datetime import datetime as dt
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 import pytz
 from aind_data_schema.core.quality_control import (
@@ -58,7 +58,7 @@ def _automated_pass() -> QCStatus:
 
 def _numeric_metric(
     name: str,
-    value,
+    value: Any,
     description: str,
     reference: Optional[str],
 ) -> QCMetric:
