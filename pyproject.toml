@@ -28,14 +28,13 @@ dependencies = [
     # environment unresolvable.
     "aind-data-schema==2.9.0",
     "aind-data-schema-models==6.2.0",
-    "aind-pophys-metadata @ git+https://github.com/AllenNeuralDynamics/aind-pophys-metadata.git@123f5cf25ca3a12b572bbba58c6449814d41f19f",
+    "aind-pophys-metadata @ git+https://github.com/AllenNeuralDynamics/aind-pophys-metadata.git@b473a1e5288096c48e47d2bf03cb24d48ef46b50",
     "log-schema[cloudwatch] @ git+https://github.com/AllenNeuralDynamics/aind-log-utils.git@f09685e#subdirectory=python",
     "roicat[all]==1.7.3",
     # Exact pins, resolved in the 3.12 target env then verified to install AND
     # import on the 3.11 floor (2026-07-30). roicat pulls torch/torchvision
     # itself; they are not re-declared here so its own constraints govern.
     "sparse==0.18.0",
-    "pint==0.24.4",
     "h5py==3.16.0",
     "matplotlib==3.10.8",
     "numpy==2.4.4",

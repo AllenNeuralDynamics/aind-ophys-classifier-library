@@ -3,12 +3,11 @@
 Capsule-specific metric content over the shared ``aind_pophys_metadata`` QC
 builders. Metric-producing functions *return* metrics; ``job.run``
 accumulates them and writes ONE ``quality_control.json`` per plane
-(the collector pattern) — never per-metric files, which is what v1 did.
+(the collector pattern).
 
-v1 emitted two loose ``QCMetric`` JSON files that the retired QC aggregator
-wrapped in a ``QCEvaluation``. v2 removes ``QCEvaluation`` entirely, so the
-grouping is now carried by every metric's ``evaluation`` tag, matching
-``QualityControl.default_grouping = ["evaluation"]``.
+v2 has no ``QCEvaluation``, so the grouping is carried by every metric's
+``evaluation`` tag, matching ``QualityControl.default_grouping =
+["evaluation"]``.
 """
 
 from datetime import datetime as dt

@@ -4,12 +4,9 @@ Kept import-light (pydantic + stdlib only) so it stays cheap to import, free
 of roicat / torch / aind-data-schema side effects, and discoverable by
 ``auto-app-panel`` without the heavy dependencies installed.
 
-Every field name is at least two characters. The v1 argparse parser exposed
-``-i``/``-o``, which the committed app panel carried as one-character
-``param_name`` values (``i``, ``o``); pydantic-settings renders a
-one-character field as a *short* option that a Code Ocean app panel can never
-emit, so those are renamed to ``input_dir``/``output_dir`` rather than
-aliased.
+Every field name is at least two characters: pydantic-settings renders a
+one-character field as a *short* option (``-i``), which a Code Ocean app panel
+can never emit — it only produces ``--name=value``.
 """
 
 from pathlib import Path

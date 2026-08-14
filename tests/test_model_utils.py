@@ -27,19 +27,19 @@ def _write(path: Path, payload: bytes) -> str:
 class TestTorchHome(unittest.TestCase):
     """Reading the Torch cache root out of the environment."""
 
-    def test_set(self):
+    def test_set(self) -> None:
         """A set TORCH_HOME comes back as a Path."""
         with mock.patch.dict(
             os.environ, {model_utils.TORCH_HOME_ENV: "/some/cache"}
         ):
             self.assertEqual(model_utils.torch_home(), Path("/some/cache"))
 
-    def test_unset(self):
+    def test_unset(self) -> None:
         """An unset TORCH_HOME is None, not a path to the cwd."""
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(model_utils.torch_home())
 
-    def test_empty(self):
+    def test_empty(self) -> None:
         """An empty TORCH_HOME is treated as unset."""
         with mock.patch.dict(os.environ, {model_utils.TORCH_HOME_ENV: ""}):
             self.assertIsNone(model_utils.torch_home())
@@ -48,14 +48,14 @@ class TestTorchHome(unittest.TestCase):
 class TestModelSource(unittest.TestCase):
     """The local-versus-network distinction."""
 
-    def test_force_local_is_asset(self):
+    def test_force_local_is_asset(self) -> None:
         """force_local is only passed for pre-staged bytes."""
         self.assertEqual(
             model_utils.model_source(model_utils.DOWNLOAD_FORCE_LOCAL),
             MODEL_SOURCE_ASSET,
         )
 
-    def test_check_local_first_is_network(self):
+    def test_check_local_first_is_network(self) -> None:
         """The fallback branch downloads, so it is labelled as such."""
         self.assertEqual(
             model_utils.model_source(model_utils.DOWNLOAD_CHECK_LOCAL_FIRST),
@@ -66,7 +66,7 @@ class TestModelSource(unittest.TestCase):
 class TestModelProvenanceRecords(unittest.TestCase):
     """The records written to ``code.parameters``."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Stage a temporary ROInet directory and Torch cache."""
         self._temp = tempfile.TemporaryDirectory()
         root = Path(self._temp.name)
@@ -90,7 +90,7 @@ class TestModelProvenanceRecords(unittest.TestCase):
                 self.network_dir, download_method
             )
 
-    def test_both_files_staged(self):
+    def test_both_files_staged(self) -> None:
         """Both files are described, by logical label and digest."""
         records = self._records(model_utils.DOWNLOAD_FORCE_LOCAL)
         self.assertEqual(
@@ -111,7 +111,7 @@ class TestModelProvenanceRecords(unittest.TestCase):
             ],
         )
 
-    def test_download_branch_labelled_network(self):
+    def test_download_branch_labelled_network(self) -> None:
         """A downloaded archive is not passed off as a staged asset."""
         records = self._records(model_utils.DOWNLOAD_CHECK_LOCAL_FIRST)
         self.assertEqual(
@@ -119,12 +119,12 @@ class TestModelProvenanceRecords(unittest.TestCase):
             [MODEL_SOURCE_NETWORK, MODEL_SOURCE_NETWORK],
         )
 
-    def test_source_names_are_not_paths(self):
+    def test_source_names_are_not_paths(self) -> None:
         """Labels stay logical, so a scratch copy does not leak in."""
         for record in self._records(model_utils.DOWNLOAD_FORCE_LOCAL):
             self.assertNotIn("/", record["source_name"])
 
-    def test_checkpoint_absent(self):
+    def test_checkpoint_absent(self) -> None:
         """A missing checkpoint is omitted, not an error."""
         (self.torch_home / model_utils.CONVNEXT_CHECKPOINT).unlink()
         records = self._records(model_utils.DOWNLOAD_CHECK_LOCAL_FIRST)
@@ -133,7 +133,7 @@ class TestModelProvenanceRecords(unittest.TestCase):
             [model_utils.ROINET_ZIP],
         )
 
-    def test_torch_home_unset(self):
+    def test_torch_home_unset(self) -> None:
         """Without TORCH_HOME the checkpoint cannot be located."""
         with mock.patch.dict(os.environ, {}, clear=True):
             records = model_utils.model_provenance_records(
@@ -144,7 +144,7 @@ class TestModelProvenanceRecords(unittest.TestCase):
             [model_utils.ROINET_ZIP],
         )
 
-    def test_archive_absent(self):
+    def test_archive_absent(self) -> None:
         """A run whose archive never arrived records no archive."""
         (self.network_dir / model_utils.ROINET_ZIP).unlink()
         records = self._records(model_utils.DOWNLOAD_CHECK_LOCAL_FIRST)

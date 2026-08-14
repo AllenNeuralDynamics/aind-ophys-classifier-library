@@ -1,13 +1,13 @@
 """Tests for the combined-classifications figure.
 
-This figure is net new to the capsule: the retired QC aggregator used to
-assemble it, while the classification QC metric has referenced it all along —
-so before this change the reference pointed at a file nothing produced.
+The classification QC metric references this figure, so it must exist for
+every plane.
 """
 
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Tuple
 
 from PIL import Image
 
@@ -16,7 +16,7 @@ from aind_ophys_classifier_library.utils import image_utils
 PLANE = "VISp_0"
 
 
-def _panel(directory: Path, name: str, size=(10, 8)) -> Path:
+def _panel(directory: Path, name: str, size: Tuple[int, int] = (10, 8)) -> Path:
     """Write a small solid-colour PNG to stand in for a real figure."""
     path = directory / name
     Image.new("RGB", size, (10, 20, 30)).save(path)
@@ -26,24 +26,24 @@ def _panel(directory: Path, name: str, size=(10, 8)) -> Path:
 class TestCombineHelpers(unittest.TestCase):
     """Horizontal and vertical combination geometry."""
 
-    def test_horizontal_geometry(self):
+    def test_horizontal_geometry(self) -> None:
         """Widths sum with padding; height is the tallest panel."""
         images = [Image.new("RGB", (10, 8)), Image.new("RGB", (6, 12))]
         combined = image_utils.combine_images_horizontally(images, padding=5)
         self.assertEqual(combined.size, (10 + 5 + 6, 12))
 
-    def test_vertical_geometry(self):
+    def test_vertical_geometry(self) -> None:
         """Heights sum with padding; width is the widest panel."""
         images = [Image.new("RGB", (10, 8)), Image.new("RGB", (6, 12))]
         combined = image_utils.combine_images_vertically(images, padding=3)
         self.assertEqual(combined.size, (10, 8 + 3 + 12))
 
-    def test_horizontal_requires_an_image(self):
+    def test_horizontal_requires_an_image(self) -> None:
         """An empty list is a caller error, not a blank canvas."""
         with self.assertRaises(ValueError):
             image_utils.combine_images_horizontally([])
 
-    def test_vertical_requires_an_image(self):
+    def test_vertical_requires_an_image(self) -> None:
         """An empty list is a caller error, not a blank canvas."""
         with self.assertRaises(ValueError):
             image_utils.combine_images_vertically([])
@@ -52,7 +52,7 @@ class TestCombineHelpers(unittest.TestCase):
 class TestSaveImage(unittest.TestCase):
     """The writer creates its parent directory."""
 
-    def test_creates_parent_directory(self):
+    def test_creates_parent_directory(self) -> None:
         """Writing into a not-yet-existing plane directory works."""
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / PLANE / "classification" / "x.png"
@@ -61,10 +61,10 @@ class TestSaveImage(unittest.TestCase):
 
 
 class TestBuildCombinedClassifications(unittest.TestCase):
-    """The 2x2 composite mined from the retired aggregator."""
+    """The 2x2 composite the classification QC metric references."""
 
-    def test_builds_two_by_two_layout(self):
-        """Two rows of two panels, matching the aggregator's layout."""
+    def test_builds_two_by_two_layout(self) -> None:
+        """Two rows of two panels, sized from the inputs plus padding."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             panels = {
@@ -90,7 +90,7 @@ class TestBuildCombinedClassifications(unittest.TestCase):
                 # two 8px rows + 10px default vertical padding
                 self.assertEqual(combined.height, 8 + 10 + 8)
 
-    def test_missing_panel_names_the_file(self):
+    def test_missing_panel_names_the_file(self) -> None:
         """A missing input figure raises, naming which one is absent."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -1,11 +1,8 @@
 """PIL helpers for the combined-classifications QC figure.
 
-Ported from the retired ``aind-ophys-quality-control-aggregator``
-(``code/image_utils.py``). That capsule is unbuildable under
-aind-data-schema v2 — v2 deletes ``QCEvaluation`` — so the composite figure
-it used to assemble now has to be produced by the capsule that produces its
-inputs. Only the three combining helpers are ported; the aggregator's
-title/annotation helper had no caller in the classifier path.
+The composite was assembled by ``aind-ophys-quality-control-aggregator``,
+which is unbuildable under aind-data-schema v2 (v2 deletes ``QCEvaluation``),
+so it is now built by the capsule that produces its panels.
 """
 
 from pathlib import Path
@@ -118,10 +115,9 @@ def build_combined_classifications(
 ) -> Path:
     """Assemble the 2x2 combined-classifications figure.
 
-    Layout matches the retired aggregator exactly: soma predictions and
-    probabilities on the top row, dendrite predictions and probabilities on
-    the bottom row. This is the figure the classification QC metric
-    references, and nothing produced it after the aggregator was retired.
+    Soma predictions and probabilities on the top row, dendrite predictions
+    and probabilities on the bottom row. This is the figure the classification
+    QC metric references.
 
     Parameters
     ----------

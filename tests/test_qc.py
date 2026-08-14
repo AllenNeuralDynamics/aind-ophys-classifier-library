@@ -3,9 +3,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from typing import List
 
 from aind_data_schema.core.quality_control import (
     CurationMetric,
+    QCMetric,
     QualityControl,
 )
 
@@ -20,7 +22,7 @@ BORDER = "VISp_0/classification/VISp_0_border_rois.png"
 class TestRoiLabels(unittest.TestCase):
     """The per-ROI label vocabulary."""
 
-    def test_all_four_combinations(self):
+    def test_all_four_combinations(self) -> None:
         """soma, dendrite, both and neither are all distinguishable."""
         labels = qc.roi_labels(
             soma_predictions=predictions(1, 0, 1, 0),
@@ -37,18 +39,18 @@ class TestRoiLabels(unittest.TestCase):
             ],
         )
 
-    def test_border_suffix(self):
+    def test_border_suffix(self) -> None:
         """A border ROI keeps its class label and gains a suffix."""
         labels = qc.roi_labels(predictions(1), predictions(0), border_flags(True))
         self.assertEqual(labels, [qc.LABEL_SOMA + qc.BORDER_SUFFIX])
 
-    def test_length_mismatch_raises(self):
+    def test_length_mismatch_raises(self) -> None:
         """Mismatched lengths would misalign labels from ROIs."""
         with self.assertRaises(ValueError) as ctx:
             qc.roi_labels(predictions(1, 0), predictions(1), border_flags(False, False))
         self.assertIn("same length", str(ctx.exception))
 
-    def test_empty_is_allowed(self):
+    def test_empty_is_allowed(self) -> None:
         """A plane with no ROIs yields no labels rather than raising."""
         self.assertEqual(
             qc.roi_labels(predictions(), predictions(), border_flags()),
@@ -57,23 +59,23 @@ class TestRoiLabels(unittest.TestCase):
 
 
 class TestDropdownMetrics(unittest.TestCase):
-    """The two reviewer sign-off dropdowns carried over from v1."""
+    """The two reviewer sign-off dropdowns."""
 
-    def test_classification_metric(self):
-        """References the net-new combined figure."""
+    def test_classification_metric(self) -> None:
+        """References the combined figure."""
         metric = qc.build_classification_metric(PLANE, COMBINED)
         self.assertEqual(metric.name, f"{PLANE} Classification")
         self.assertEqual(metric.reference, COMBINED)
         self.assertEqual(metric.tags["evaluation"], qc.EVALUATION)
         self.assertTrue(metric.status_history)
 
-    def test_border_metric(self):
+    def test_border_metric(self) -> None:
         """References the border figure and shares the evaluation group."""
         metric = qc.build_border_roi_metric(PLANE, BORDER)
         self.assertEqual(metric.name, f"{PLANE} Border ROIs")
         self.assertEqual(metric.tags["evaluation"], qc.EVALUATION)
 
-    def test_dropdown_value_is_a_string(self):
+    def test_dropdown_value_is_a_string(self) -> None:
         """DropdownMetric.value is a string, empty when unevaluated."""
         metric = qc.build_classification_metric(PLANE, COMBINED)
         self.assertIsInstance(metric.value.value, str)
@@ -82,7 +84,7 @@ class TestDropdownMetrics(unittest.TestCase):
 class TestCurationMetric(unittest.TestCase):
     """The per-ROI labels as the core v2 CurationMetric."""
 
-    def _metric(self):
+    def _metric(self) -> CurationMetric:
         """Build a curation metric over three ROIs."""
         labels = qc.roi_labels(
             predictions(1, 0, 1),
@@ -91,22 +93,22 @@ class TestCurationMetric(unittest.TestCase):
         )
         return qc.build_roi_label_curation_metric(PLANE, labels, COMBINED)
 
-    def test_is_core_curation_metric(self):
+    def test_is_core_curation_metric(self) -> None:
         """The core class is used; qcportal no longer exports one."""
         self.assertIsInstance(self._metric(), CurationMetric)
 
-    def test_required_v2_fields(self):
+    def test_required_v2_fields(self) -> None:
         """``type`` is set and ``value`` is a list, as v2 requires."""
         metric = self._metric()
         self.assertEqual(metric.type, qc.CURATION_TYPE)
         self.assertIsInstance(metric.value, list)
         self.assertEqual(len(metric.value), 3)
 
-    def test_status_history_seeded(self):
+    def test_status_history_seeded(self) -> None:
         """An empty status_history breaks QualityControl status derivation."""
         self.assertTrue(self._metric().status_history)
 
-    def test_description_states_the_vocabulary(self):
+    def test_description_states_the_vocabulary(self) -> None:
         """CurationMetric has no options field, so the description must."""
         description = self._metric().description
         for label in (qc.LABEL_SOMA, qc.LABEL_DENDRITE, qc.LABEL_NEITHER):
@@ -114,25 +116,25 @@ class TestCurationMetric(unittest.TestCase):
 
 
 class TestNumericMetrics(unittest.TestCase):
-    """The scalar metrics the v1 capsule discarded."""
+    """The scalar summary metrics."""
 
-    def test_roi_count(self):
+    def test_roi_count(self) -> None:
         """ROI count is an int value."""
         metric = qc.build_roi_count_metric(PLANE, 42, COMBINED)
         self.assertEqual(metric.value, 42)
 
-    def test_positive_count_and_fraction(self):
+    def test_positive_count_and_fraction(self) -> None:
         """Count and fraction are both recorded."""
         metric = qc.build_positive_count_metric(PLANE, "Soma", 5, 20, COMBINED)
         self.assertEqual(metric.value["count"], 5)
         self.assertAlmostEqual(metric.value["fraction"], 0.25)
 
-    def test_positive_fraction_with_zero_rois(self):
+    def test_positive_fraction_with_zero_rois(self) -> None:
         """A zero ROI count must not divide by zero."""
         metric = qc.build_positive_count_metric(PLANE, "Soma", 0, 0, COMBINED)
         self.assertEqual(metric.value["fraction"], 0.0)
 
-    def test_border_count_records_the_parameter(self):
+    def test_border_count_records_the_parameter(self) -> None:
         """border_size is recorded so the count is auditable."""
         metric = qc.build_border_count_metric(PLANE, 3, 10, BORDER)
         self.assertEqual(metric.value["count"], 3)
@@ -142,7 +144,7 @@ class TestNumericMetrics(unittest.TestCase):
 class TestQualityControlDocument(unittest.TestCase):
     """The full document, its grouping and its writer."""
 
-    def _metrics(self):
+    def _metrics(self) -> List[QCMetric]:
         """Build the whole per-plane metric set."""
         soma = predictions(1, 0)
         dendrite = predictions(0, 1)
@@ -160,18 +162,18 @@ class TestQualityControlDocument(unittest.TestCase):
             qc.build_border_count_metric(PLANE, int(border.sum()), 10, BORDER),
         ]
 
-    def test_all_metrics_share_one_evaluation_group(self):
-        """One group keeps the reviewer view equivalent to v1's evaluation."""
+    def test_all_metrics_share_one_evaluation_group(self) -> None:
+        """Every metric carries the same evaluation tag."""
         groups = {m.tags["evaluation"] for m in self._metrics()}
         self.assertEqual(groups, {qc.EVALUATION})
 
-    def test_build_uses_project_default_grouping(self):
+    def test_build_uses_project_default_grouping(self) -> None:
         """The shared standard grouping is applied."""
         document = qc.build_quality_control(self._metrics())
         self.assertIsInstance(document, QualityControl)
         self.assertEqual(document.default_grouping, ["evaluation"])
 
-    def test_write_and_round_trip(self):
+    def test_write_and_round_trip(self) -> None:
         """The written file validates back into a core v2 QualityControl."""
         document = qc.build_quality_control(self._metrics())
         with tempfile.TemporaryDirectory() as tmp:

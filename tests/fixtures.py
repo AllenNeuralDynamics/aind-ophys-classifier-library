@@ -9,6 +9,8 @@ Lives in ``tests/`` because ``[tool.coverage.run] source`` includes ``tests``;
 keep it exercised by the tests that import it.
 """
 
+from typing import Optional
+
 import numpy as np
 from aind_pophys_metadata.io import object_type_value
 
@@ -17,7 +19,7 @@ SUBJECT_ID = "783992"
 DATASET_NAME = "multiplane-ophys_783992_2026-07-30_12-00-00"
 
 
-def predictions(*values) -> np.ndarray:
+def predictions(*values: int) -> np.ndarray:
     """Return per-ROI predictions as the ONNX classifier emits them.
 
     ROICaT's ONNX logistic-regression head returns an int64 label array of
@@ -36,7 +38,7 @@ def predictions(*values) -> np.ndarray:
     return np.asarray(values, dtype=np.int64)
 
 
-def border_flags(*values) -> np.ndarray:
+def border_flags(*values: bool) -> np.ndarray:
     """Return per-ROI border flags as ``classify_border_rois`` emits them.
 
     Parameters
@@ -95,7 +97,10 @@ def roi_masks(n_rois: int, height: int = 8, width: int = 8) -> np.ndarray:
     return masks
 
 
-def v1_session(scale_factor=UM_PER_PIXEL, unit="um/pixel") -> dict:
+def v1_session(
+    scale_factor: Optional[float] = UM_PER_PIXEL,
+    unit: Optional[str] = "micrometer",
+) -> dict:
     """Return a minimal v1 ``session.json`` dict.
 
     Parameters
@@ -103,7 +108,8 @@ def v1_session(scale_factor=UM_PER_PIXEL, unit="um/pixel") -> dict:
     scale_factor : float or None, optional
         ``fov_scale_factor``; pass ``None`` to omit it entirely.
     unit : str or None, optional
-        ``fov_scale_factor_unit``; pass ``None`` to omit it.
+        ``fov_scale_factor_unit``; pass ``None`` to omit it, which the shared
+        normalizer reads as micrometres.
 
     Returns
     -------
@@ -122,7 +128,10 @@ def v1_session(scale_factor=UM_PER_PIXEL, unit="um/pixel") -> dict:
     }
 
 
-def v2_acquisition(scale=UM_PER_PIXEL, axis_unit="micrometer") -> dict:
+def v2_acquisition(
+    scale: Optional[float] = UM_PER_PIXEL,
+    axis_unit: Optional[str] = "micrometer",
+) -> dict:
     """Return a minimal v2 ``acquisition.json`` dict.
 
     Parameters
@@ -184,6 +193,33 @@ def v2_acquisition(scale=UM_PER_PIXEL, axis_unit="micrometer") -> dict:
     }
 
 
-def data_description(name=DATASET_NAME) -> dict:
+def minimal_metadata(um_per_pixel: Optional[float] = UM_PER_PIXEL) -> dict:
+    """Return a flat minimal ``metadata.json`` dict.
+
+    The third schema shape the shared normalizer accepts, for producers with
+    no aind-data-schema core file.
+
+    Parameters
+    ----------
+    um_per_pixel : float or None, optional
+        Micrometres per pixel on the single plane; ``None`` omits it.
+
+    Returns
+    -------
+    dict
+        The raw minimal metadata dict.
+    """
+    plane = {"plane_index": 0, "structure": "VISp"}
+    if um_per_pixel is not None:
+        plane["um_per_pixel"] = um_per_pixel
+    return {
+        "frame_rate": 9.48,
+        "instrument_id": "MESO.1",
+        "subject_id": SUBJECT_ID,
+        "planes": [plane],
+    }
+
+
+def data_description(name: str = DATASET_NAME) -> dict:
     """Return a minimal ``data_description.json`` dict."""
     return {"name": name}

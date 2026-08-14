@@ -75,10 +75,9 @@ def find_extraction_files(input_dir: Path) -> Tuple[Path, ...]:
 
     In the pipeline this capsule is flattened (one task per plane), so this
     normally returns exactly one file; a standalone capsule run may mount
-    several. An empty result is an error rather than a silent no-op: the v1
-    code looped over the glob directly, so a mount with no extraction output
-    exited 0 having produced nothing, and the Nextflow output declaration
-    then failed with the far less informative "Missing output file(s)".
+    several. An empty result raises rather than exiting 0 having produced
+    nothing, which surfaces in Nextflow only as the far less informative
+    "Missing output file(s)".
 
     Parameters
     ----------

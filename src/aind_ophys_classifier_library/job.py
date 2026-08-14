@@ -25,7 +25,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from aind_data_schema.core.processing import ResourceUsage
-from aind_pophys_metadata.paths import relative_to_root
+from aind_pophys_metadata import relative_to_root
 from log_schema.main import setup_logging
 
 from . import classification, plots, qc
@@ -105,8 +105,6 @@ def _write_figures(
         paths["border_rois"],
     )
 
-    # Net new: the retired QC aggregator used to assemble this, and the
-    # classification metric has referenced it all along.
     image_utils.build_combined_classifications(
         soma_predictions_png=paths["soma_predictions"],
         soma_probabilities_png=paths["soma_probabilities"],
@@ -158,8 +156,7 @@ def _run_parameters(
     """Assemble the parameter dict recorded in processing.json.
 
     ``um_per_pixel`` and its source are recorded because they scale the
-    embedding, making them the single most important reproducibility fields
-    — the v1 parameter dict omitted both.
+    embedding, making them the single most important reproducibility fields.
     """
     return {
         "border_size": settings.border_size,
@@ -278,9 +275,6 @@ def _prepare(settings: ClassifierSettings) -> _Prepared:
         classification.prepare_plane(extraction_file, results_root)
         for extraction_file in extraction_files
     )
-    # Plane ids come from the input directory layout; the canonical ids are
-    # only advisory here, so a divergence warns and the run continues.
-    mu.validate_plane_ids(input_dir, [plane.name for plane in planes], logger)
     logger.info("Classifying %s plane(s)", len(planes))
 
     return _Prepared(

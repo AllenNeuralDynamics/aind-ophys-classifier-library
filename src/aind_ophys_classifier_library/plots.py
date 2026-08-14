@@ -1,7 +1,7 @@
 """ROI overlay figures for classification QC.
 
-Each builder returns the ``Figure`` so the caller owns saving and closing it;
-the v1 code left figures open, which leaks memory across a multi-plane run.
+Each builder returns the ``Figure`` so the caller owns saving and closing it.
+Leaving figures open leaks memory across a multi-plane run.
 """
 
 from typing import List, Optional
