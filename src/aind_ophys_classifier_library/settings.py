@@ -84,10 +84,3 @@ class ClassifierSettings(BaseSettings, cli_parse_args=True):
             "re-fetches ~105 MB from osf.io."
         ),
     )
-    verify: bool = Field(
-        default=False,
-        description=(
-            "Round-trip the emitted processing.json and quality_control.json "
-            "through the core v2 schema objects after writing."
-        ),
-    )

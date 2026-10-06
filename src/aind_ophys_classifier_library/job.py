@@ -1,6 +1,6 @@
 """Top-level ROI-classification orchestration.
 
-``run()`` is the library entry point called by the thin capsule wrapper:
+``run()`` is the library entry point called by the thin runtime wrapper:
 read metadata (v1 or v2) -> configure logging -> for each plane, embed and
 classify its ROIs -> write the classification HDF5, the overlay figures and
 the combined figure -> emit a full ``processing.json`` and
@@ -11,8 +11,8 @@ still leaves a document describing what was attempted, with the error recorded
 in ``notes``. Each plane gets its own guard, and a failure before any plane is
 known writes one document at the results root.
 
-In the pipeline this capsule is flattened (one task per plane), so the loop
-normally runs once; a standalone capsule run may mount several planes.
+In the pipeline this step is flattened (one task per plane), so the loop
+normally runs once; a standalone run may mount several planes.
 """
 
 import logging
@@ -38,15 +38,6 @@ logger = logging.getLogger("Ophys classification")
 
 PROCESS_NAME = mu.PROCESS_NAME
 CLASSIFIER_ASSET_NAME = "2p_roi_classifier"
-
-
-def _verify_outputs(output_dir: Path) -> None:
-    """Round-trip the emitted metadata through the core v2 schema objects."""
-    from aind_data_schema.core.processing import Processing
-    from aind_data_schema.core.quality_control import QualityControl
-
-    Processing.model_validate_json((Path(output_dir) / "processing.json").read_text())
-    QualityControl.model_validate_json((Path(output_dir) / "quality_control.json").read_text())
 
 
 def _with_gpu(resources: ResourceUsage) -> ResourceUsage:
@@ -200,7 +191,13 @@ def _output_parameters(result: dict, border: np.ndarray) -> dict:
 
 
 def _require_classifiers(settings: ClassifierSettings) -> None:
-    """Fail fast when either ONNX model is missing, naming which."""
+    """Fail fast when either ONNX model is missing, naming which.
+
+    Raises
+    ------
+    FileNotFoundError
+        If either classifier ONNX path is not a file.
+    """
     for label, path in (
         ("soma", settings.soma_classifier_path),
         ("dendrite", settings.dendrite_classifier_path),
@@ -361,9 +358,7 @@ def run(settings: Optional[ClassifierSettings] = None) -> None:
     Parameters
     ----------
     settings : ClassifierSettings, optional
-        Parsed settings; constructed from CLI/env when omitted. When
-        ``settings.verify`` is True, the emitted metadata is round-tripped
-        through the core v2 schema objects after writing.
+        Parsed settings; constructed from CLI/env when omitted.
     """
     settings = settings or ClassifierSettings()
     try:
@@ -384,6 +379,3 @@ def run(settings: Optional[ClassifierSettings] = None) -> None:
     for plane in prepared.planes:
         _classify_plane(settings, prepared, plane)
     logger.info("Classification complete")
-
-    if settings.verify:
-        _verify_outputs(prepared.planes[-1].output_dir)

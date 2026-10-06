@@ -1,11 +1,11 @@
 """Metadata reads for ophys ROI classification.
 
-A thin, capsule-specific layer over the shared ``aind_pophys_metadata``
+A thin, classification-specific layer over the shared ``aind_pophys_metadata``
 library. The shared library owns the metadata read (``CoreMetadata``), the
 ``Processing`` builders and the stage guard that writes ``processing.json``;
 this module assembles the ``ClassifierMetadata`` view, enforces that
 micrometres per pixel is actually present, and binds the guard to this
-capsule's process type and code identity.
+step's process type and code identity.
 
 Micrometres per pixel comes from ``CoreMetadata.get_um_per_pixel()``, already
 converted to micrometres, so nothing here knows how any schema stores it.
@@ -73,7 +73,7 @@ def load_classifier_metadata(
     Returns
     -------
     ClassifierMetadata
-        The minimal fields this capsule consumes.
+        The minimal fields this step consumes.
 
     Raises
     ------
@@ -175,7 +175,7 @@ def classification_stage(
 
     The guard stamps the timings, captures static resources and writes
     ``processing.json`` on the way out whether or not the body raised, with
-    the error recorded in ``notes``. This wrapper adds the two capsule-level
+    the error recorded in ``notes``. This wrapper adds the two step-level
     decisions: the process type, and the sibling upstream dependencies read
     out of the input directory.
 
@@ -195,7 +195,7 @@ def classification_stage(
     output_path : str, optional
         This stage's output directory relative to the results root.
     input_dir : Path, optional
-        Capsule input directory, searched for upstream ``processing.json``
+        Input directory, searched for upstream ``processing.json``
         documents. Omitted when the run failed before it was known.
     logger : logging.Logger, optional
         Logger for the stage lifecycle lines.

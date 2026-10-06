@@ -74,10 +74,12 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pillow" },
+    { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pytz" },
     { name = "roicat", extra = ["all"] },
     { name = "sparse" },
+    { name = "torch" },
 ]
 
 [package.dev-dependencies]
@@ -96,16 +98,18 @@ dev = [
 requires-dist = [
     { name = "aind-data-schema", specifier = "==2.9.0" },
     { name = "aind-data-schema-models", specifier = "==6.2.0" },
-    { name = "aind-pophys-metadata", git = "https://github.com/AllenNeuralDynamics/aind-pophys-metadata.git?rev=adac8ebee57f895bb2d30b69cde01dd41afbce10" },
+    { name = "aind-pophys-metadata", git = "https://github.com/AllenNeuralDynamics/aind-pophys-metadata.git?rev=v0.2.0" },
     { name = "h5py", specifier = "==3.16.0" },
     { name = "log-schema", extras = ["cloudwatch"], git = "https://github.com/AllenNeuralDynamics/aind-log-utils.git?subdirectory=python&rev=f09685e" },
     { name = "matplotlib", specifier = "==3.10.8" },
     { name = "numpy", specifier = "==2.4.4" },
     { name = "pillow", specifier = "==12.1.1" },
+    { name = "pydantic", specifier = "==2.11.10" },
     { name = "pydantic-settings", specifier = "==2.14.2" },
     { name = "pytz", specifier = "==2026.3.post1" },
     { name = "roicat", extras = ["all"], specifier = "==1.7.3" },
     { name = "sparse", specifier = "==0.18.0" },
+    { name = "torch", specifier = "==2.11.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -121,8 +125,8 @@ dev = [
 
 [[package]]
 name = "aind-pophys-metadata"
-version = "0.1.0"
-source = { git = "https://github.com/AllenNeuralDynamics/aind-pophys-metadata.git?rev=adac8ebee57f895bb2d30b69cde01dd41afbce10#adac8ebee57f895bb2d30b69cde01dd41afbce10" }
+version = "0.2.0"
+source = { git = "https://github.com/AllenNeuralDynamics/aind-pophys-metadata.git?rev=v0.2.0#3f1ad1fd5c84e9b591d4cbdc5628fb4f1ace922c" }
 dependencies = [
     { name = "aind-data-schema" },
     { name = "aind-data-schema-models" },

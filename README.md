@@ -14,16 +14,16 @@ all the logic lives here with its own tests, and the capsule is a thin wrapper
 that calls `aind_ophys_classifier_library.job.run`. Metadata reads, the
 `Processing` builders and the QC document builders come from the shared
 [`aind-pophys-metadata`](https://github.com/AllenNeuralDynamics/aind-pophys-metadata)
-package, so they stay consistent across the pipeline's capsules.
+package, so they stay consistent across the pipeline's processing steps.
 
 ## What it does
 
 For each plane mounted under the input directory:
 
-1. Read the acquisition metadata (aind-data-schema v1 `session.json` or v2
-   `acquisition.json`, dispatched on which file is present) to resolve
-   micrometres per pixel.
-2. Load the plane's dense ROI masks from the extraction capsule's
+1. Read micrometres per pixel through the shared `CoreMetadata`, which owns
+   every metadata format (v1 `session.json`, v2 `acquisition.json`, or a
+   minimal `metadata.json`).
+2. Load the plane's dense ROI masks from the extraction step's
    `<plane>/extraction/<plane>_extraction.h5`.
 3. Embed the ROI images with ROICaT's ROInet, then classify them with two ONNX
    logistic-regression heads (soma and dendrite).
@@ -39,7 +39,7 @@ silently assumes 1.0 um/pixel when it is unset.
 ## Modules
 
 ### `job.py`
-Orchestration. `run()` is the entry point the capsule calls. Everything shared
+Orchestration. `run()` is the entry point the thin runtime wrapper calls. Everything shared
 across planes is resolved once, then each plane is classified inside its own
 `stage_guard`, so a failing plane still leaves a `processing.json` naming what
 was attempted and why it stopped.
@@ -75,7 +75,7 @@ Metadata reads. `load_classifier_metadata` returns the frozen
 raises rather than defaulting when micrometres per pixel is unresolvable.
 Also `build_classification_code`, `process_name`, and the
 `classification_stage` context manager that binds the shared `stage_guard` to
-this capsule's process type.
+this step's process type.
 
 ### `utils/model_utils.py`
 Model provenance. `model_provenance_records` records the SHA-256 of the two
@@ -102,7 +102,6 @@ classification QC metric references.
 | `border_size` | `10` | Pixels from the FOV edge for an ROI to count as a border ROI. |
 | `um_per_pixel` | from metadata | Override, for metadata that does not carry the scale. |
 | `roinet_dir` | unset | Directory holding a pre-staged `ROInet.zip`. |
-| `verify` | `false` | Round-trip the emitted documents through the v2 schema objects. |
 
 Set `roinet_dir` inside the pipeline. `tmp_dir` is created fresh per task, so
 without a pre-staged archive ROInet's cache always misses and every task
@@ -114,7 +113,7 @@ Per plane, under `<output_dir>/<plane>/classification/`:
 
 - `<plane>_classification.h5` — groups `soma` and `dendrites`, each with
   `predictions` and `probabilities`, plus `border/labels`. These names are the
-  cross-capsule contract with `aind-ophys-nwb`, which pairs by positional ROI
+  cross-step contract with `aind-ophys-nwb`, which pairs by positional ROI
   index.
 - `<plane>_soma_predictions.png`, `<plane>_soma_probabilities.png`,
   `<plane>_dendrite_predictions.png`, `<plane>_dendrite_probabilities.png`,

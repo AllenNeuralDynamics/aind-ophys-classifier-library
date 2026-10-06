@@ -1,8 +1,7 @@
 """PIL helpers for the combined-classifications QC figure.
 
-The composite was assembled by ``aind-ophys-quality-control-aggregator``,
-which is unbuildable under aind-data-schema v2 (v2 deletes ``QCEvaluation``),
-so it is now built by the capsule that produces its panels.
+The composite is assembled from the per-ROI overlay panels this step
+produces, and is the figure the classification QC metric references.
 """
 
 from pathlib import Path
@@ -151,7 +150,7 @@ def build_combined_classifications(
     for panel in panels:
         if not Path(panel).is_file():
             raise FileNotFoundError(
-                f"Cannot build the combined classifications figure: " f"{panel} does not exist."
+                f"Cannot build the combined classifications figure: {panel} does not exist."
             )
 
     with (

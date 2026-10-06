@@ -48,7 +48,7 @@ CONVNEXT_CHECKPOINT = "hub/checkpoints/convnext_tiny-983f1562.pth"
 def torch_home() -> Optional[Path]:
     """Return the Torch cache root from the environment, if it is set.
 
-    Which directory Torch caches hub checkpoints in is the capsule wrapper's
+    Which directory Torch caches hub checkpoints in is the runtime wrapper's
     decision, expressed as ``TORCH_HOME``; this library only reads it.
 
     Returns
@@ -76,7 +76,7 @@ def model_source(download_method: str) -> str:
     str
         ``MODEL_SOURCE_ASSET`` when the bytes were already local, otherwise
         ``MODEL_SOURCE_NETWORK``.
-    """  # noqa: E501
+    """
     if download_method == DOWNLOAD_FORCE_LOCAL:
         return MODEL_SOURCE_ASSET
     return MODEL_SOURCE_NETWORK

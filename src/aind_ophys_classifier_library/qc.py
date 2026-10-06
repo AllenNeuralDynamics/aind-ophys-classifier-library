@@ -1,6 +1,6 @@
 """quality_control.json generation for ophys ROI classification.
 
-Capsule-specific metric content over the shared ``aind_pophys_metadata`` QC
+Classification-specific metric content over the shared ``aind_pophys_metadata`` QC
 builders. Metric-producing functions *return* metrics; ``job.run``
 accumulates them and writes ONE ``quality_control.json`` per plane
 (the collector pattern).

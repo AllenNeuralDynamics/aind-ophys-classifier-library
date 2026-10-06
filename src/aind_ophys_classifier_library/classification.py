@@ -1,6 +1,6 @@
 """ROICaT embedding and ONNX soma/dendrite classification.
 
-The heavy compute for this capsule: ROInet embedding on the GPU, the two
+The heavy compute for this step: ROInet embedding on the GPU, the two
 ONNX logistic-regression classifiers, and the border-ROI geometry.
 
 ``network_files_dir`` is an explicit parameter rather than being read off a
@@ -73,8 +73,8 @@ def file_md5(path: Path) -> str:
 def find_extraction_files(input_dir: Path) -> Tuple[Path, ...]:
     """Locate every extraction HDF5 under ``input_dir``.
 
-    In the pipeline this capsule is flattened (one task per plane), so this
-    normally returns exactly one file; a standalone capsule run may mount
+    In the pipeline this step is flattened (one task per plane), so this
+    normally returns exactly one file; a standalone run may mount
     several. An empty result raises rather than exiting 0 having produced
     nothing, which surfaces in Nextflow only as the far less informative
     "Missing output file(s)".
@@ -82,7 +82,7 @@ def find_extraction_files(input_dir: Path) -> Tuple[Path, ...]:
     Parameters
     ----------
     input_dir : Path
-        Capsule input directory.
+        Input directory.
 
     Returns
     -------
@@ -98,7 +98,7 @@ def find_extraction_files(input_dir: Path) -> Tuple[Path, ...]:
     if not matches:
         raise FileNotFoundError(
             f"No '{EXTRACTION_H5_GLOB}' found under {input_dir}; "
-            "classification needs the extraction capsule's output."
+            "classification needs the extraction step's output."
         )
     return matches
 
@@ -205,6 +205,11 @@ def resolve_network_files_dir(
     -------
     tuple of (Path, str)
         The directory to hand ROInet, and the ``download_method`` to use.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``roinet_dir`` is set but holds no ``ROInet.zip``.
     """
     if roinet_dir is not None:
         staged = Path(roinet_dir) / ROINET_ZIP
@@ -274,7 +279,7 @@ def load_onnx_classifier(
     roicat.classification.classifier.ONNX_model_sklearnLogisticRegression
         The loaded classifier.
     """
-    return roicat.classification.classifier.ONNX_model_sklearnLogisticRegression(  # noqa: E501
+    return roicat.classification.classifier.ONNX_model_sklearnLogisticRegression(
         str(path)
     )
 
@@ -345,7 +350,7 @@ def write_classification_h5(
 ) -> Path:
     """Write the classification HDF5.
 
-    The group and dataset names are the cross-capsule contract with
+    The group and dataset names are the cross-step contract with
     ``aind-ophys-nwb``, which reads ``soma``/``dendrites`` and pairs by
     positional ROI index — so they must not be renamed here.
 
@@ -381,8 +386,7 @@ def gpu_name() -> Optional[str]:
     """Return the active CUDA device name, or ``None`` when unavailable.
 
     The classifier is the pipeline's only GPU process, and the shared
-    ``resource_usage()`` records CPU only, so this fills the gap locally
-    rather than by modifying the shared library.
+    ``collect_static_resources()`` records no GPU, so the name is added here.
 
     Returns
     -------

@@ -94,7 +94,7 @@ class TestCurationMetric(unittest.TestCase):
         return qc.build_roi_label_curation_metric(PLANE, labels, COMBINED)
 
     def test_is_core_curation_metric(self) -> None:
-        """The core class is used; qcportal no longer exports one."""
+        """The per-ROI labels are the core v2 ``CurationMetric``."""
         self.assertIsInstance(self._metric(), CurationMetric)
 
     def test_required_v2_fields(self) -> None:

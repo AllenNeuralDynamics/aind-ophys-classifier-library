@@ -66,7 +66,6 @@ class TestClassifierSettingsDefaults(unittest.TestCase):
         self.assertEqual(settings.border_size, 10)
         self.assertIsNone(settings.um_per_pixel)
         self.assertIsNone(settings.roinet_dir)
-        self.assertFalse(settings.verify)
 
     def test_one_character_argparse_flags_are_renamed(self) -> None:
         """The directory fields have full names, never one-character ones."""
@@ -83,10 +82,6 @@ class TestClassifierSettingsDefaults(unittest.TestCase):
         """
         with self.assertRaises(SystemExit):
             _make_settings(["--input-dir=/data"])
-
-    def test_bool_string_parsing(self) -> None:
-        """Bools parse from strings, so --verify 1 works."""
-        self.assertTrue(_make_settings(["--verify=1"]).verify)
 
 
 class TestSampleCliValue(unittest.TestCase):
