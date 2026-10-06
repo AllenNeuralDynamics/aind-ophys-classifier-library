@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aind-ophys-classifier-library"
-description = "Generated from aind-library-template"
+description = "ROI soma/dendrite classification for AIND ophys pipelines"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.13"
 authors = [
     {name = "Allen Institute for Neural Dynamics"}
 ]
@@ -17,6 +17,20 @@ readme = "README.md"
 version = "0.1.0"
 
 dependencies = [
+    "aind-data-schema==2.9.0",
+    "aind-data-schema-models==6.2.0",
+    "aind-pophys-metadata @ git+https://github.com/AllenNeuralDynamics/aind-pophys-metadata.git@v0.2.0",
+    "log-schema[cloudwatch] @ git+https://github.com/AllenNeuralDynamics/aind-log-utils.git@f09685e#subdirectory=python",
+    "roicat[all]==1.7.3",
+    "sparse==0.18.0",
+    "h5py==3.16.0",
+    "matplotlib==3.10.8",
+    "numpy==2.4.4",
+    "pillow==12.1.1",
+    "pydantic==2.11.10",
+    "pydantic-settings==2.14.2",
+    "pytz==2026.3.post1",
+    "torch==2.11.0",
 ]
 
 [dependency-groups]
@@ -34,7 +48,7 @@ dev = [
 where = ["src"]
 
 [tool.black]
-line-length = 79
+line-length = 100
 target_version = ['py310']
 exclude = '''
 
@@ -56,7 +70,11 @@ exclude = '''
 '''
 
 [tool.coverage.run]
-omit = ["*__init__*"]
+omit = [
+    "*__init__*",
+    "*/aind_ophys_classifier_library/classification.py",
+    "*/aind_ophys_classifier_library/job.py",
+]
 source = ["aind_ophys_classifier_library", "tests"]
 
 [tool.coverage.report]
@@ -69,7 +87,7 @@ exclude_lines = [
 fail_under = 100
 
 [tool.isort]
-line_length = 79
+line_length = 100
 profile = "black"
 skip = [".conda", ".venv"]
 
