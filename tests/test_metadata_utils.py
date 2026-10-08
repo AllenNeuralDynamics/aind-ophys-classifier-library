@@ -4,16 +4,18 @@ import json
 import os
 import tempfile
 import unittest
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 from aind_data_schema.core.processing import Processing
 from aind_data_schema_models.process_names import ProcessName
-from aind_pophys_metadata import processing as shared_processing
 
 from aind_ophys_classifier_library.utils import metadata_utils as mu
 from tests import fixtures
+
+LIBRARY = "aind-ophys-classifier-library"
 
 
 def _write(directory: Path, name: str, payload: dict) -> None:
@@ -179,25 +181,15 @@ class TestLoadClassifierMetadata(unittest.TestCase):
 
 
 class TestBuildClassificationCode(unittest.TestCase):
-    """Code identity: the backing library's landing page and version."""
+    """The v2 Code block identifying classification runs."""
 
-    def test_url_is_the_library_landing_page(self) -> None:
-        """The url names the backing library, matching the version."""
+    def test_identity_is_the_installed_library(self) -> None:
+        """name, version and url all describe this library's package."""
         code = mu.build_classification_code({})
-        self.assertEqual(
-            code.url,
-            "https://github.com/AllenNeuralDynamics/aind-ophys-classifier-library",
-        )
-
-    def test_version_is_the_installed_library_version(self) -> None:
-        """The version comes from the installed distribution, not VERSION."""
-        with patch.dict(os.environ, {"VERSION": "9.9.9"}, clear=False):
-            code = mu.build_classification_code({})
-        self.assertEqual(
-            code.version,
-            shared_processing.library_version("aind-ophys-classifier-library"),
-        )
-        self.assertNotEqual(code.version, "9.9.9")
+        self.assertEqual(code.name, LIBRARY)
+        self.assertEqual(code.version, version(LIBRARY))
+        self.assertTrue(code.version)
+        self.assertEqual(code.url, f"https://github.com/AllenNeuralDynamics/{LIBRARY}")
 
     def test_parameters_and_input_data_recorded(self) -> None:
         """Run parameters and input provenance land on the Code block."""

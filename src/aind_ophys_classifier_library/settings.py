@@ -16,7 +16,6 @@ class ClassifierSettings(BaseSettings, cli_parse_args=True):
         env_prefix="CLASSIFIER_",
         case_sensitive=False,
         extra="ignore",
-        protected_namespaces=(),
     )
 
     input_dir: Path = Field(

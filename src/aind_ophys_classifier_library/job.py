@@ -26,7 +26,7 @@ from .utils import model_utils
 
 logger = logging.getLogger("Ophys classification")
 
-PROCESS_NAME = mu.PROCESS_NAME
+PROCESS_NAME = "aind-ophys-classifier"
 CLASSIFIER_ASSET_NAME = "2p_roi_classifier"
 
 

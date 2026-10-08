@@ -12,11 +12,6 @@ from aind_pophys_metadata import CoreMetadata
 from aind_pophys_metadata import processing as shared_processing
 from aind_pophys_metadata.runner import StageContext, stage_guard
 
-PROCESS_NAME = "aind-ophys-classifier"
-LIBRARY_NAME = "aind-ophys-classifier-library"
-LIBRARY_URL = (
-    "https://github.com/AllenNeuralDynamics/aind-ophys-classifier-library"
-)
 PROCESS_TYPE = ProcessName.IMAGE_CELL_CLASSIFICATION
 
 # Source label recorded in processing.json when the value came from the CLI
@@ -107,12 +102,11 @@ def build_classification_code(
     Returns
     -------
     Code
-        The populated code block.
+        The populated code block; name, version and url are this library's
+        installed package metadata.
     """
     return shared_processing.build_code(
-        name=PROCESS_NAME,
-        library_name=LIBRARY_NAME,
-        url=LIBRARY_URL,
+        __name__,
         parameters=parameters,
         input_data=input_data,
     )
