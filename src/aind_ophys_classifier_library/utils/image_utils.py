@@ -1,8 +1,4 @@
-"""PIL helpers for the combined-classifications QC figure.
-
-The composite is assembled from the per-ROI overlay panels this step
-produces, and is the figure the classification QC metric references.
-"""
+"""PIL helpers for the combined-classifications QC figure."""
 
 from pathlib import Path
 from typing import List
@@ -115,8 +111,7 @@ def build_combined_classifications(
     """Assemble the 2x2 combined-classifications figure.
 
     Soma predictions and probabilities on the top row, dendrite predictions
-    and probabilities on the bottom row. This is the figure the classification
-    QC metric references.
+    and probabilities on the bottom row.
 
     Parameters
     ----------

@@ -1,13 +1,4 @@
-"""CLI/environment settings for ophys ROI classification.
-
-Kept import-light (pydantic + stdlib only) so it stays cheap to import, free
-of roicat / torch / aind-data-schema side effects, and discoverable by
-``auto-app-panel`` without the heavy dependencies installed.
-
-Every field name is at least two characters: pydantic-settings renders a
-one-character field as a *short* option (``-i``), which a Code Ocean app panel
-can never emit — it only produces ``--name=value``.
-"""
+"""CLI/environment settings for ophys ROI classification."""
 
 from pathlib import Path
 from typing import Optional
@@ -69,18 +60,14 @@ class ClassifierSettings(BaseSettings, cli_parse_args=True):
     um_per_pixel: Optional[float] = Field(
         default=None,
         description=(
-            "Micrometres per pixel, used to scale the ROI images fed to "
-            "ROInet. Read from the acquisition metadata when omitted; supply "
-            "it explicitly only when the metadata does not carry it, because "
-            "an incorrect value silently changes every classification."
+            "Micrometres per pixel used to scale the ROI images fed to "
+            "ROInet. Read from the acquisition metadata when omitted."
         ),
     )
     roinet_dir: Optional[Path] = Field(
         default=None,
         description=(
             "Directory holding a pre-staged ROInet.zip. When set, the network "
-            "files are loaded from there instead of being downloaded, which "
-            "is required inside the pipeline where every task otherwise "
-            "re-fetches ~105 MB from osf.io."
+            "files are loaded from there instead of being downloaded."
         ),
     )

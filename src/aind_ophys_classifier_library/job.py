@@ -1,18 +1,8 @@
-"""Top-level ROI-classification orchestration.
+"""Classification entry point.
 
-``run()`` is the library entry point called by the thin runtime wrapper:
-read metadata (v1 or v2) -> configure logging -> for each plane, embed and
-classify its ROIs -> write the classification HDF5, the overlay figures and
-the combined figure -> emit a full ``processing.json`` and
-``quality_control.json`` per plane.
-
-``processing.json`` is written by the shared ``stage_guard``, so a failed run
-still leaves a document describing what was attempted, with the error recorded
-in ``notes``. Each plane gets its own guard, and a failure before any plane is
-known writes one document at the results root.
-
-In the pipeline this step is flattened (one task per plane), so the loop
-normally runs once; a standalone run may mount several planes.
+``run()`` classifies every mounted plane and writes, per plane, the
+classification HDF5, the overlay and combined figures, ``processing.json`` and
+``quality_control.json``.
 """
 
 import logging
@@ -144,11 +134,7 @@ def _run_parameters(
     metadata: mu.ClassifierMetadata,
     model_name: str,
 ) -> dict:
-    """Assemble the parameter dict recorded in processing.json.
-
-    ``um_per_pixel`` and its source are recorded because they scale the
-    embedding, making them the single most important reproducibility fields.
-    """
+    """Assemble the parameter dict recorded in processing.json."""
     return {
         "border_size": settings.border_size,
         "model": model_name,
@@ -163,12 +149,6 @@ def _run_parameters(
 
 def _output_parameters(result: dict, border: np.ndarray) -> dict:
     """Summarise this plane's classification outputs for QC triage.
-
-    ``DataProcess.output_parameters`` carries scalar summary statistics
-    describing the outputs this step produced, chosen so a reviewer can triage
-    a plane without opening the classification HDF5. It is deliberately not a
-    record of the run's *input* parameters — those belong on
-    ``code.parameters``, and conflating the two is how the field rots.
 
     Parameters
     ----------
@@ -238,12 +218,7 @@ class _Prepared:
 
 
 def _prepare(settings: ClassifierSettings) -> _Prepared:
-    """Read metadata, configure logging, and resolve every shared input.
-
-    Everything that a plane's classification depends on is resolved here, so
-    a per-plane stage guard covers the whole of the work that can fail once a
-    plane is known.
-    """
+    """Read metadata, configure logging, and resolve every shared input."""
     metadata = mu.load_classifier_metadata(settings.input_dir, settings.um_per_pixel)
     setup_logging(
         use_cloudwatch=True,
@@ -292,12 +267,7 @@ def _classify_plane(
     prepared: _Prepared,
     plane: classification.Plane,
 ) -> None:
-    """Classify one plane inside its own stage guard.
-
-    The guard writes the plane's ``processing.json`` on the way out whether or
-    not this raised, so a failed plane still leaves a document naming what was
-    attempted and why it stopped.
-    """
+    """Classify one plane inside its own stage guard."""
     results_root = settings.output_dir.resolve()
     input_dir = settings.input_dir.resolve()
     code = mu.build_classification_code(

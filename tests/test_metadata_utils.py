@@ -1,9 +1,4 @@
-"""Tests for the metadata read layer and the classification stage.
-
-um/pixel carries the most risk in this library: ROInet silently assumes
-1.0 um/pixel when the value is missing, which changes every prediction
-without erroring, so absence must raise rather than default.
-"""
+"""Tests for the metadata read layer and the classification stage."""
 
 import json
 import os

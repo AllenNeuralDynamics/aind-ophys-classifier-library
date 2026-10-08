@@ -1,13 +1,4 @@
-"""Metadata and compute-result fixtures shared by the tests.
-
-Deliberately minimal: only the fields the getters actually read, so the tests
-prove the library tolerates messy-but-sufficient metadata rather than
-requiring a fully-validating document. v2 discriminator strings are resolved
-from the schema classes, matching how the read layer works.
-
-Lives in ``tests/`` because ``[tool.coverage.run] source`` includes ``tests``;
-keep it exercised by the tests that import it.
-"""
+"""Metadata and compute-result fixtures shared by the tests."""
 
 from typing import Optional
 
@@ -22,8 +13,8 @@ DATASET_NAME = "multiplane-ophys_783992_2026-07-30_12-00-00"
 def predictions(*values: int) -> np.ndarray:
     """Return per-ROI predictions as the ONNX classifier emits them.
 
-    ROICaT's ONNX logistic-regression head returns an int64 label array of
-    shape ``(n_rois,)``.
+    Matches ROICaT's ONNX logistic-regression head: int64 labels of shape
+    ``(n_rois,)``.
 
     Parameters
     ----------
@@ -74,8 +65,7 @@ def probabilities(n_rois: int) -> np.ndarray:
 def roi_masks(n_rois: int, height: int = 8, width: int = 8) -> np.ndarray:
     """Return dense ROI masks as ``load_extraction_rois`` returns them.
 
-    One single-pixel ROI per plane row, which is enough footprint for the
-    overlay figures and the border geometry.
+    One single-pixel ROI per row.
 
     Parameters
     ----------
@@ -139,8 +129,7 @@ def v2_acquisition(
     scale : float or None, optional
         Magnitude of the ``Scale`` entry in
         ``image_to_acquisition_transform``; ``None`` omits the entry, leaving
-        only a ``Translation`` (which is what the canonical multiplane
-        example emits, and the case that must fail loudly).
+        only a ``Translation``.
     axis_unit : str or None, optional
         ``coordinate_system.axis_unit``.
 
@@ -195,9 +184,6 @@ def v2_acquisition(
 
 def minimal_metadata(um_per_pixel: Optional[float] = UM_PER_PIXEL) -> dict:
     """Return a flat minimal ``metadata.json`` dict.
-
-    The third schema shape the shared normalizer accepts, for producers with
-    no aind-data-schema core file.
 
     Parameters
     ----------

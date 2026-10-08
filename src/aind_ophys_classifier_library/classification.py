@@ -1,13 +1,4 @@
-"""ROICaT embedding and ONNX soma/dendrite classification.
-
-The heavy compute for this step: ROInet embedding on the GPU, the two
-ONNX logistic-regression classifiers, and the border-ROI geometry.
-
-``network_files_dir`` is an explicit parameter rather than being read off a
-global settings object, because where the ROInet weights come from is the
-one decision that determines whether a pipeline task reaches out to the
-network. See :func:`resolve_network_files_dir`.
-"""
+"""ROInet embedding, ONNX soma/dendrite classification and border-ROI flags."""
 
 import hashlib
 import logging
@@ -50,9 +41,6 @@ class Plane:
 def file_md5(path: Path) -> str:
     """Compute the MD5 hex digest of a file.
 
-    Recorded in ``processing.json`` so a run can be tied to the exact
-    classifier weights that produced it.
-
     Parameters
     ----------
     path : Path
@@ -72,12 +60,6 @@ def file_md5(path: Path) -> str:
 
 def find_extraction_files(input_dir: Path) -> Tuple[Path, ...]:
     """Locate every extraction HDF5 under ``input_dir``.
-
-    In the pipeline this step is flattened (one task per plane), so this
-    normally returns exactly one file; a standalone run may mount
-    several. An empty result raises rather than exiting 0 having produced
-    nothing, which surfaces in Nextflow only as the far less informative
-    "Missing output file(s)".
 
     Parameters
     ----------
@@ -134,8 +116,6 @@ def load_extraction_rois(extraction_file: Path) -> np.ndarray:
     """Load dense ROI masks from an extraction HDF5.
 
     Reads the sparse ``rois`` group written by ``aind-ophys-extraction``.
-    That group's layout is unchanged by the v2 upgrade, so this read needs no
-    version dispatch.
 
     Parameters
     ----------
@@ -182,17 +162,11 @@ def resolve_network_files_dir(
     tmp_dir: Path,
     roinet_dir: Optional[Path],
 ) -> Tuple[Path, str]:
-    """Decide where the ROInet weights come from, and say so loudly.
+    """Choose the ROInet weights directory and download method.
 
-    ROInet needs a ~105 MB ``ROInet.zip`` and unpacks ``params.json`` /
-    ``model.py`` / ``*.pth`` beside it, so the directory must be writable.
-
-    Inside the pipeline ``tmp_dir`` is created fresh per task, so the
-    "check_local_first" cache always misses and **every task re-downloads the
-    archive from osf.io**. When ``roinet_dir`` points at a directory that
-    already holds the archive it is used with ``force_local``, which never
-    touches the network. Otherwise a warning names the download, because a
-    silent 105 MB fetch per task is the failure mode to avoid, not a detail.
+    Returns ``roinet_dir`` with ``force_local`` when it holds ``ROInet.zip``;
+    otherwise ``tmp_dir`` with ``check_local_first``, logging a warning that the
+    archive will be downloaded.
 
     Parameters
     ----------
@@ -294,10 +268,6 @@ def classify_plane(
 ) -> dict:
     """Embed a plane's ROIs and classify them as soma and/or dendrite.
 
-    ``um_per_pixel`` scales the ROI images fed to the network, so it changes
-    the embedding and therefore the predictions. It is required here — the
-    caller has already failed the run if it could not be resolved.
-
     Parameters
     ----------
     rois : numpy.ndarray
@@ -350,9 +320,8 @@ def write_classification_h5(
 ) -> Path:
     """Write the classification HDF5.
 
-    The group and dataset names are the cross-step contract with
-    ``aind-ophys-nwb``, which reads ``soma``/``dendrites`` and pairs by
-    positional ROI index — so they must not be renamed here.
+    Writes ``soma`` and ``dendrites`` groups, each with ``predictions`` and
+    ``probabilities``, plus ``border/labels``.
 
     Parameters
     ----------
@@ -384,9 +353,6 @@ def write_classification_h5(
 
 def gpu_name() -> Optional[str]:
     """Return the active CUDA device name, or ``None`` when unavailable.
-
-    The classifier is the pipeline's only GPU process, and the shared
-    ``collect_static_resources()`` records no GPU, so the name is added here.
 
     Returns
     -------

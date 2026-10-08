@@ -1,9 +1,4 @@
-"""Tests for the ROI overlay figures.
-
-The figure builders index the classifier outputs as arrays
-(``probabilities[:, 1, np.newaxis, np.newaxis]``), so they are exercised with
-the numpy types and shapes ``classify_plane`` actually returns.
-"""
+"""Tests for the ROI overlay figures."""
 
 import unittest
 

@@ -1,11 +1,4 @@
-"""Tests for ClassifierSettings, including the app-panel drivability contract.
-
-A Code Ocean app panel can only emit ``--name=value``. Two properties must
-therefore hold for every settings field, and are asserted here rather than
-trusted to the generator: the field parses in that form, and its name is
-longer than one character (pydantic-settings renders a one-character field
-as a short option, which the panel can never produce).
-"""
+"""Tests for ClassifierSettings and its CLI parsing."""
 
 import sys
 import typing
@@ -75,11 +68,7 @@ class TestClassifierSettingsDefaults(unittest.TestCase):
         self.assertIn("output_dir", ClassifierSettings.model_fields)
 
     def test_hyphenated_arguments_are_rejected(self) -> None:
-        """pydantic-settings takes underscores only.
-
-        So the app panel's ``param_name`` values and main.nf's run line must
-        use underscores too.
-        """
+        """pydantic-settings takes underscores only."""
         with self.assertRaises(SystemExit):
             _make_settings(["--input-dir=/data"])
 

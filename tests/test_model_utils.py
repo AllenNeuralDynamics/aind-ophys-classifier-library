@@ -1,9 +1,4 @@
-"""Tests for model-file provenance.
-
-These assert provenance, never verification: an unexpected digest is a
-recorded fact here, not a failure, and a missing file is omitted rather than
-raising.
-"""
+"""Tests for model-file provenance."""
 
 import hashlib
 import os

@@ -1,8 +1,4 @@
-"""Tests for the combined-classifications figure.
-
-The classification QC metric references this figure, so it must exist for
-every plane.
-"""
+"""Tests for the combined-classifications figure."""
 
 import tempfile
 import unittest

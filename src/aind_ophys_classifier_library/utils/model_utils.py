@@ -1,18 +1,4 @@
-"""Identity and provenance of the model files a classification run loads.
-
-Two files decide what the ROInet embedding produces, and neither is pinned by
-a package version: the ``ROInet.zip`` archive, and the Torchvision
-ConvNeXt-Tiny checkpoint the archive's ``model.py`` builds a pretrained
-backbone from before ROInet's state dictionary is loaded over it. Recording
-their digests is what ties a run's predictions to the bytes behind them.
-
-This is provenance, not verification: nothing here compares a digest against
-an expectation, and a missing file is omitted rather than failing the run.
-
-The download-method constants live here rather than in ``classification``
-because they are the local-versus-network distinction this module reports on,
-and ``classification`` cannot be imported without ROICaT.
-"""
+"""Provenance records for the ROInet archive and ConvNeXt-Tiny checkpoint."""
 
 import logging
 import os
@@ -47,9 +33,6 @@ CONVNEXT_CHECKPOINT = "hub/checkpoints/convnext_tiny-983f1562.pth"
 
 def torch_home() -> Optional[Path]:
     """Return the Torch cache root from the environment, if it is set.
-
-    Which directory Torch caches hub checkpoints in is the runtime wrapper's
-    decision, expressed as ``TORCH_HOME``; this library only reads it.
 
     Returns
     -------
@@ -88,8 +71,7 @@ def model_provenance_records(
 ) -> List[Dict[str, str]]:
     """Describe the model files this run loaded, for ``code.parameters``.
 
-    Call this after the embedding has run: in the download branch the archive
-    does not exist until ROICaT has fetched it.
+    Call after the embedding has run.
 
     Parameters
     ----------

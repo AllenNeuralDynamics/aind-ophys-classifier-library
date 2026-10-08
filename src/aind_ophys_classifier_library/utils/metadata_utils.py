@@ -1,15 +1,4 @@
-"""Metadata reads for ophys ROI classification.
-
-A thin, classification-specific layer over the shared ``aind_pophys_metadata``
-library. The shared library owns the metadata read (``CoreMetadata``), the
-``Processing`` builders and the stage guard that writes ``processing.json``;
-this module assembles the ``ClassifierMetadata`` view, enforces that
-micrometres per pixel is actually present, and binds the guard to this
-step's process type and code identity.
-
-Micrometres per pixel comes from ``CoreMetadata.get_um_per_pixel()``, already
-converted to micrometres, so nothing here knows how any schema stores it.
-"""
+"""Classification metadata view, ``Code`` block and stage guard over ``aind_pophys_metadata``."""
 
 import logging
 from contextlib import contextmanager
@@ -37,13 +26,7 @@ SOURCE_OVERRIDE = "--um_per_pixel"
 
 @dataclass(frozen=True)
 class ClassifierMetadata:
-    """Minimal metadata the ROI classifier consumes.
-
-    ``um_per_pixel`` scales the ROI images handed to ROInet, so it changes
-    the embedding and therefore every prediction; ``um_per_pixel_source``
-    records where it came from for reproducibility. The identifiers are
-    logging context only and stay optional.
-    """
+    """Minimal metadata the ROI classifier consumes."""
 
     um_per_pixel: float
     um_per_pixel_source: str
@@ -57,10 +40,6 @@ def load_classifier_metadata(
     um_per_pixel_override: Optional[float] = None,
 ) -> ClassifierMetadata:
     """Read the metadata classification consumes from ``input_dir``.
-
-    Fails fast when µm/pixel cannot be resolved: ROInet silently assumes
-    1.0 µm/pixel when it is missing, which changes every prediction without
-    erroring, so a missing value must never be defaulted here.
 
     Parameters
     ----------
@@ -118,10 +97,6 @@ def build_classification_code(
 ) -> Code:
     """Construct the ``Code`` block recorded on the classification process.
 
-    ``url`` is this repository's landing page; ``version`` is derived by
-    the shared builder from ``LIBRARY_NAME``, the installed released version
-    of that same artifact.
-
     Parameters
     ----------
     parameters : dict
@@ -172,16 +147,6 @@ def classification_stage(
     logger: Optional[logging.Logger] = None,
 ) -> Iterator[StageContext]:
     """Wrap one classification stage in the shared :func:`stage_guard`.
-
-    The guard stamps the timings, captures static resources and writes
-    ``processing.json`` on the way out whether or not the body raised, with
-    the error recorded in ``notes``. This wrapper adds the two step-level
-    decisions: the process type, and the sibling upstream dependencies read
-    out of the input directory.
-
-    Every ``processing.json`` staged into ``input_dir`` is treated as a flat
-    sibling upstream — no ordering and no parent/grandparent distinction —
-    with this process's own name excluded so a step cannot depend on itself.
 
     Parameters
     ----------

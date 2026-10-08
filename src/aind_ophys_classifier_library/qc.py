@@ -1,14 +1,4 @@
-"""quality_control.json generation for ophys ROI classification.
-
-Classification-specific metric content over the shared ``aind_pophys_metadata`` QC
-builders. Metric-producing functions *return* metrics; ``job.run``
-accumulates them and writes ONE ``quality_control.json`` per plane
-(the collector pattern).
-
-v2 has no ``QCEvaluation``, so the grouping is carried by every metric's
-``evaluation`` tag, matching ``QualityControl.default_grouping =
-["evaluation"]``.
-"""
+"""Classification QC metrics and the ``quality_control.json`` writer."""
 
 from datetime import datetime as dt
 from pathlib import Path
@@ -43,11 +33,7 @@ BORDER_SUFFIX = "|border"
 
 
 def _automated_pass() -> QCStatus:
-    """Return an automated PASS status stamped in US/Pacific.
-
-    A metric with an empty ``status_history`` raises ``IndexError`` when
-    ``QualityControl`` derives its status, so every metric seeds one.
-    """
+    """Return an automated PASS status stamped in US/Pacific."""
     return QCStatus(
         evaluator="Automated",
         status=Status.PASS,
@@ -150,10 +136,8 @@ def roi_labels(
 ) -> List[str]:
     """Combine the three per-ROI booleans into one label per ROI.
 
-    The soma and dendrite classifiers are independent, so both-positive and
-    neither-positive are both possible. List position is the ROI id: ROIs are
-    positional indices in suite2p order, the same order as ``rois/coords`` in
-    the extraction HDF5, and downstream consumers pair by position.
+    Each label is ``soma``, ``dendrite``, ``soma+dendrite`` or ``unclassified``,
+    suffixed ``|border`` for a border ROI. List position is the ROI index.
 
     Parameters
     ----------
@@ -172,8 +156,7 @@ def roi_labels(
     Raises
     ------
     ValueError
-        If the three sequences are not the same length — a mismatch would
-        silently misalign labels from ROIs.
+        If the three sequences are not the same length.
     """
     lengths = {
         len(soma_predictions),
@@ -207,11 +190,6 @@ def build_roi_label_curation_metric(
     reference: str,
 ) -> CurationMetric:
     """Per-ROI labels as a core v2 ``CurationMetric``.
-
-    These are automatically-produced labels intended to be corrected by a
-    human, which is exactly what ``CurationMetric`` plus ``curation_history``
-    models. ``CurationMetric`` has no ``options`` field, so the vocabulary is
-    stated in the description.
 
     Parameters
     ----------
