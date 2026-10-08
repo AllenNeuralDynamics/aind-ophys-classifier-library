@@ -6,12 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "aind-ophys-classifier-library"
 description = "ROI soma/dendrite classification for AIND ophys pipelines"
 license = "MIT"
-# CEILING: roicat 1.7.3 declares Requires-Python >=3.11,<3.13. Verified
-# 2026-07-30 by execution: 3.10.19 fails to RESOLVE ("Because the current
-# Python version (3.10.19) does not satisfy Python>=3.11,<3.13"), 3.11 and
-# 3.12 both install and import. 3.13/3.14 are unreachable until roicat lifts
-# its own bound. The Code Ocean runtime image is python3.12.4, so 3.12 is the
-# deployment target.
 requires-python = ">=3.11,<3.13"
 authors = [
     {name = "Allen Institute for Neural Dynamics"}
@@ -23,17 +17,11 @@ readme = "README.md"
 version = "0.1.0"
 
 dependencies = [
-    # These two move together: aind-data-schema 2.9.0 requires
-    # aind-data-schema-models >=6.1.0,<7, so pinning either alone leaves the
-    # environment unresolvable.
     "aind-data-schema==2.9.0",
     "aind-data-schema-models==6.2.0",
     "aind-pophys-metadata @ git+https://github.com/AllenNeuralDynamics/aind-pophys-metadata.git@v0.2.0",
     "log-schema[cloudwatch] @ git+https://github.com/AllenNeuralDynamics/aind-log-utils.git@f09685e#subdirectory=python",
     "roicat[all]==1.7.3",
-    # Exact pins, resolved in the 3.12 target env then verified to install AND
-    # import on the 3.11 floor. torch is imported directly (gpu_name), so it is
-    # pinned at the version roicat resolves; torchvision stays transitive.
     "sparse==0.18.0",
     "h5py==3.16.0",
     "matplotlib==3.10.8",
@@ -82,9 +70,6 @@ exclude = '''
 '''
 
 [tool.coverage.run]
-# Temporarily omitted, inherited from a production capsule without unit tests:
-# classification.py is the ROICaT/GPU compute and job.py the orchestration a
-# real data run exercises end to end. Every other module is held at 100%.
 omit = [
     "*__init__*",
     "*/aind_ophys_classifier_library/classification.py",
