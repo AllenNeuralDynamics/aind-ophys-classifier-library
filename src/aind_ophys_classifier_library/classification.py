@@ -1,87 +1,41 @@
-import argparse
+"""ROInet embedding, ONNX soma/dendrite classification and border-ROI flags."""
+
 import hashlib
-import json
+import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime as dt
-from datetime import timezone as tz
 from pathlib import Path
-from typing import List
+from typing import Callable, Optional, Tuple
 
 import h5py
-import matplotlib.pyplot as plt
 import numpy as np
 import roicat
 import sparse
-from aind_data_schema.core.processing import DataProcess, ProcessName
-from aind_data_schema.core.quality_control import QCMetric, QCStatus, Status
-from aind_qcportal_schema.metric_value import DropdownMetric
-from pint import UnitRegistry
-from plots import plot_border_rois, plot_predictions, plot_probabilities
+
+from .utils.model_utils import (
+    DOWNLOAD_CHECK_LOCAL_FIRST,
+    DOWNLOAD_FORCE_LOCAL,
+    ROINET_ZIP,
+)
+
+logger = logging.getLogger(__name__)
+
+EXTRACTION_H5_GLOB = "*extraction.h5"
+CLASSIFICATION_SUBDIR = "classification"
+
+ROINET_URL = "https://osf.io/c8m3b/download"
+ROINET_MD5 = "357a8d9b630ec79f3e015d0056a4c2d5"
+ROI_IMAGE_SIZE = (36, 36)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Plane:
+    """One plane's classification inputs and output locations."""
+
     name: str
     input_extraction_file: Path
     output_dir: Path
     output_classification_file: Path
-    rois: np.array
-
-
-def classify_plane(
-    rois: np.array, um_per_pixel: float, soma_classifier, dendrite_classifier
-):
-    """Classify ROIs in a plane as soma or dendrite.
-
-    Parameters
-    ----------
-    rois : np.array
-        The ROIs.
-    um_per_pixel : float
-        The um_per_pixel value.
-    soma_classifier : object
-        The soma classifier.
-    dendrite_classifier : object
-        The dendrite classifier.
-
-    Returns
-    -------
-    Tuple[np.array, np.array, np.array, np.array]
-        The predictions and probabilities for soma and dendrite classifications.
-    """
-    # ROInet embedding
-    roinet = roicat.ROInet.ROInet_embedder(
-        device=roicat.helpers.set_device(),  # Which torch device to use ('cpu', 'cuda', etc.)
-        dir_networkFiles=args.tmp_dir,  # Directory to download the pretrained network to
-        download_method="check_local_first",  # Check to see if a model has already been downloaded to the location (will skip if hash matches) # noqa E501
-        download_url="https://osf.io/c8m3b/download",  # URL of the model
-        download_hash="357a8d9b630ec79f3e015d0056a4c2d5",  # Hash of the model file
-        forward_pass_version="head",  # How the data is passed through the network
-        verbose=False,  # Whether to print updates
-    )
-
-    data = roicat.data_importing.Data_roicat()
-    data.set_spatialFootprints(rois, um_per_pixel=um_per_pixel)
-    data.transform_spatialFootprints_to_ROIImages(out_height_width=(36, 36))
-
-    roinet.generate_dataloader(
-        ROI_images=data.ROI_images,  # Input images of ROIs
-        um_per_pixel=data.um_per_pixel,  # Resolution of FOV
-        pref_plot=False,  # Whether or not to plot the ROI sizes
-        numWorkers_dataloader=int(os.getenv("CO_CPUS", -1)),
-    )
-    roinet.generate_latents()
-
-    soma_predictions, soma_probabilities = soma_classifier(roinet.latents)
-    dendrite_predictions, dendrite_probabilities = dendrite_classifier(roinet.latents)
-
-    return (
-        soma_predictions,
-        soma_probabilities,
-        dendrite_predictions,
-        dendrite_probabilities,
-    )
 
 
 def file_md5(path: Path) -> str:
@@ -104,85 +58,315 @@ def file_md5(path: Path) -> str:
     return md5.hexdigest()
 
 
-def prepare_plane(extraction_file: Path, output_dir: Path) -> List[Plane]:
-    """Prepare a plane for classification by loading the ROIs and creating the output directory.
+def find_extraction_files(input_dir: Path) -> Tuple[Path, ...]:
+    """Locate every extraction HDF5 under ``input_dir``.
+
+    Parameters
+    ----------
+    input_dir : Path
+        Input directory.
+
+    Returns
+    -------
+    tuple of Path
+        The extraction HDF5 files, sorted for deterministic ordering.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no extraction HDF5 is found.
+    """
+    matches = tuple(sorted(Path(input_dir).rglob(EXTRACTION_H5_GLOB)))
+    if not matches:
+        raise FileNotFoundError(
+            f"No '{EXTRACTION_H5_GLOB}' found under {input_dir}; "
+            "classification needs the extraction step's output."
+        )
+    return matches
+
+
+def prepare_plane(extraction_file: Path, output_dir: Path) -> Plane:
+    """Derive a plane's identity and output paths, creating the directory.
 
     Parameters
     ----------
     extraction_file : Path
-        Path to the extraction file for the plane.
+        The plane's extraction HDF5, at
+        ``<plane>/extraction/<plane>_extraction.h5``.
     output_dir : Path
-        Path to the output directory.
+        Results root.
 
     Returns
     -------
     Plane
-        The plane object.
-    str
-        The name of the plane.
+        The populated plane.
     """
     plane_name = extraction_file.parts[-3]
-    plane_dir = output_dir / plane_name / "classification"
-    plane = Plane(
+    plane_dir = Path(output_dir) / plane_name / CLASSIFICATION_SUBDIR
+    plane_dir.mkdir(parents=True, exist_ok=True)
+    return Plane(
         name=plane_name,
         input_extraction_file=extraction_file,
         output_dir=plane_dir,
-        output_classification_file=plane_dir / f"{plane_name}_classification.h5",
-        rois=load_extraction_rois(extraction_file),
+        output_classification_file=(plane_dir / f"{plane_name}_classification.h5"),
     )
 
-    plane.output_dir.mkdir(parents=True, exist_ok=True)
 
-    return plane, plane_name
+def load_extraction_rois(extraction_file: Path) -> np.ndarray:
+    """Load dense ROI masks from an extraction HDF5.
 
-
-def load_extraction_rois(extraction_file: Path) -> np.array:
-    """Load the ROIs from an extraction file.
+    Reads the sparse ``rois`` group written by ``aind-ophys-extraction``.
 
     Parameters
     ----------
     extraction_file : Path
-        Path to the extraction file.
+        Path to the extraction HDF5.
 
     Returns
     -------
-    np.array
-        The ROIs.
+    numpy.ndarray
+        Dense ROI masks of shape ``(n_rois, height, width)``.
     """
     with h5py.File(extraction_file) as f:
         return sparse.COO(f["rois/coords"], f["rois/data"], f["rois/shape"]).todense()
 
 
-def classify_border_rois(rois: np.array, border_size: int) -> np.array:
-    """Classify ROIs that are on the border of the FOV.
+def classify_border_rois(rois: np.ndarray, border_size: int) -> np.ndarray:
+    """Flag ROIs within ``border_size`` pixels of the FOV edge.
 
     Parameters
     ----------
-    rois : np.array
-        The ROIs.
+    rois : numpy.ndarray
+        Dense ROI masks of shape ``(n_rois, height, width)``.
     border_size : int
-        The distance from the border for an ROI to be considered on the border.
+        Distance from the border, in pixels.
 
     Returns
     -------
-    np.array
-        A boolean array indicating which ROIs are on the border
+    numpy.ndarray
+        Boolean array of shape ``(n_rois,)``.
     """
     masks = np.where(rois > 0)
     border_rois = set()
     border_rois.update(masks[0][np.where(masks[1] < border_size)[0]].tolist())
     border_rois.update(masks[0][np.where(masks[2] < border_size)[0]].tolist())
-    border_rois.update(
-        masks[0][np.where(masks[1] >= rois.shape[1] - border_size)[0]].tolist()
+    border_rois.update(masks[0][np.where(masks[1] >= rois.shape[1] - border_size)[0]].tolist())
+    border_rois.update(masks[0][np.where(masks[2] >= rois.shape[2] - border_size)[0]].tolist())
+
+    flags = np.zeros(shape=rois.shape[0], dtype=bool)
+    flags[list(border_rois)] = True
+    return flags
+
+
+def resolve_network_files_dir(
+    tmp_dir: Path,
+    roinet_dir: Optional[Path],
+) -> Tuple[Path, str]:
+    """Choose the ROInet weights directory and download method.
+
+    Returns ``roinet_dir`` with ``force_local`` when it holds ``ROInet.zip``;
+    otherwise ``tmp_dir`` with ``check_local_first``, logging a warning that the
+    archive will be downloaded.
+
+    Parameters
+    ----------
+    tmp_dir : Path
+        Scratch directory, used when no pre-staged archive is available.
+    roinet_dir : Path or None
+        Directory holding a pre-staged ``ROInet.zip``.
+
+    Returns
+    -------
+    tuple of (Path, str)
+        The directory to hand ROInet, and the ``download_method`` to use.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``roinet_dir`` is set but holds no ``ROInet.zip``.
+    """
+    if roinet_dir is not None:
+        staged = Path(roinet_dir) / ROINET_ZIP
+        if staged.is_file():
+            logger.info("Using pre-staged ROInet weights at %s; no download.", staged)
+            return Path(roinet_dir), DOWNLOAD_FORCE_LOCAL
+        raise FileNotFoundError(
+            f"roinet_dir was set to {roinet_dir} but {staged} does not "
+            f"exist. Either stage {ROINET_ZIP} there or leave roinet_dir "
+            "unset to allow a download."
+        )
+
+    logger.warning(
+        "No pre-staged ROInet weights; ROInet will download ~105 MB from %s "
+        "into %s. Inside the pipeline this happens once per task because the "
+        "scratch directory is created fresh. Stage %s and pass --roinet_dir "
+        "to avoid it.",
+        ROINET_URL,
+        tmp_dir,
+        ROINET_ZIP,
     )
-    border_rois.update(
-        masks[0][np.where(masks[2] >= rois.shape[2] - border_size)[0]].tolist()
+    return Path(tmp_dir), DOWNLOAD_CHECK_LOCAL_FIRST
+
+
+def build_roinet_embedder(
+    network_files_dir: Path, download_method: str
+) -> "roicat.ROInet.ROInet_embedder":
+    """Construct the ROInet embedder.
+
+    Parameters
+    ----------
+    network_files_dir : Path
+        Writable directory holding or receiving the ROInet archive.
+    download_method : str
+        ``"force_local"`` or ``"check_local_first"``, from
+        :func:`resolve_network_files_dir`.
+
+    Returns
+    -------
+    roicat.ROInet.ROInet_embedder
+        The constructed embedder.
+    """
+    Path(network_files_dir).mkdir(parents=True, exist_ok=True)
+    return roicat.ROInet.ROInet_embedder(
+        device=roicat.helpers.set_device(),
+        dir_networkFiles=str(network_files_dir),
+        download_method=download_method,
+        download_url=ROINET_URL,
+        download_hash=ROINET_MD5,
+        forward_pass_version="head",
+        verbose=False,
     )
 
-    border_rois_bool = np.zeros(shape=rois.shape[0], dtype=bool)
-    border_rois_bool[list(border_rois)] = True
 
-    return border_rois_bool
+def load_onnx_classifier(
+    path: Path,
+) -> "roicat.classification.classifier.ONNX_model_sklearnLogisticRegression":
+    """Load an ONNX logistic-regression classifier.
+
+    Parameters
+    ----------
+    path : Path
+        Path to the ONNX model.
+
+    Returns
+    -------
+    roicat.classification.classifier.ONNX_model_sklearnLogisticRegression
+        The loaded classifier.
+    """
+    return roicat.classification.classifier.ONNX_model_sklearnLogisticRegression(
+        str(path)
+    )
+
+
+def classify_plane(
+    rois: np.ndarray,
+    um_per_pixel: float,
+    soma_classifier: Callable,
+    dendrite_classifier: Callable,
+    network_files_dir: Path,
+    download_method: str,
+) -> dict:
+    """Embed a plane's ROIs and classify them as soma and/or dendrite.
+
+    Parameters
+    ----------
+    rois : numpy.ndarray
+        Dense ROI masks of shape ``(n_rois, height, width)``.
+    um_per_pixel : float
+        Micrometres per pixel of the field of view.
+    soma_classifier : callable
+        The soma ONNX classifier.
+    dendrite_classifier : callable
+        The dendrite ONNX classifier.
+    network_files_dir : Path
+        Directory holding or receiving the ROInet archive.
+    download_method : str
+        ROInet download method.
+
+    Returns
+    -------
+    dict
+        ``soma_predictions``, ``soma_probabilities``,
+        ``dendrite_predictions``, ``dendrite_probabilities``.
+    """
+    roinet = build_roinet_embedder(network_files_dir, download_method)
+
+    data = roicat.data_importing.Data_roicat()
+    data.set_spatialFootprints(rois, um_per_pixel=um_per_pixel)
+    data.transform_spatialFootprints_to_ROIImages(out_height_width=ROI_IMAGE_SIZE)
+
+    roinet.generate_dataloader(
+        ROI_images=data.ROI_images,
+        um_per_pixel=data.um_per_pixel,
+        pref_plot=False,
+        numWorkers_dataloader=int(os.getenv("CO_CPUS", -1)),
+    )
+    roinet.generate_latents()
+
+    soma_predictions, soma_probabilities = soma_classifier(roinet.latents)
+    dendrite_predictions, dendrite_probabilities = dendrite_classifier(roinet.latents)
+    return {
+        "soma_predictions": soma_predictions,
+        "soma_probabilities": soma_probabilities,
+        "dendrite_predictions": dendrite_predictions,
+        "dendrite_probabilities": dendrite_probabilities,
+    }
+
+
+def write_classification_h5(
+    plane: Plane,
+    result: dict,
+    border_rois: np.ndarray,
+) -> Path:
+    """Write the classification HDF5.
+
+    Writes ``soma`` and ``dendrites`` groups, each with ``predictions`` and
+    ``probabilities``, plus ``border/labels``.
+
+    Parameters
+    ----------
+    plane : Plane
+        The plane being written.
+    result : dict
+        Output of :func:`classify_plane`.
+    border_rois : numpy.ndarray
+        Boolean per-ROI border flags.
+
+    Returns
+    -------
+    Path
+        The path written.
+    """
+    with h5py.File(plane.output_classification_file, "w") as f:
+        group = f.create_group("soma")
+        group.create_dataset("predictions", data=result["soma_predictions"])
+        group.create_dataset("probabilities", data=result["soma_probabilities"])
+
+        group = f.create_group("dendrites")
+        group.create_dataset("predictions", data=result["dendrite_predictions"])
+        group.create_dataset("probabilities", data=result["dendrite_probabilities"])
+
+        group = f.create_group("border")
+        group.create_dataset("labels", data=border_rois)
+    return plane.output_classification_file
+
+
+def gpu_name() -> Optional[str]:
+    """Return the active CUDA device name, or ``None`` when unavailable.
+
+    Returns
+    -------
+    str or None
+        The CUDA device name, or ``None`` if no GPU is in use.
+    """
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return str(torch.cuda.get_device_name(0))
+    except Exception as exc:  # pragma: no cover - environment dependent
+        logger.debug("Could not query GPU name: %s", exc)
+    return None
 
 
 if __name__ == "__main__":
