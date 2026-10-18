@@ -45,20 +45,43 @@ class TestClassifierSettingsDefaults(unittest.TestCase):
         self.assertEqual(settings.input_dir, Path("/data"))
         self.assertEqual(settings.output_dir, Path("/results"))
         self.assertEqual(settings.tmp_dir, Path("/scratch"))
-        self.assertTrue(
-            str(settings.soma_classifier_path).endswith(
-                "soma.classification_training.autoclassifier.onnx"
-            )
+        self.assertEqual(
+            settings.soma_classifier_path,
+            Path("/data/2p_roi_classifier/soma.classification_training.autoclassifier.onnx"),
         )
-        self.assertTrue(
-            str(settings.dendrite_classifier_path).endswith(
-                "dendrite.classification_training.autoclassifier.onnx"
-            )
+        self.assertEqual(
+            settings.dendrite_classifier_path,
+            Path("/data/2p_roi_classifier/dendrite.classification_training.autoclassifier.onnx"),
         )
         self.assertIsNone(settings.model_name)
         self.assertEqual(settings.border_size, 10)
         self.assertIsNone(settings.um_per_pixel)
         self.assertIsNone(settings.roinet_dir)
+
+    def test_classifier_paths_follow_input_dir(self) -> None:
+        """Unset model paths resolve under a task-relative input_dir."""
+        settings = _make_settings(["--input_dir=../data"])
+        model_dir = Path("../data/2p_roi_classifier")
+        self.assertEqual(
+            settings.soma_classifier_path,
+            model_dir / "soma.classification_training.autoclassifier.onnx",
+        )
+        self.assertEqual(
+            settings.dendrite_classifier_path,
+            model_dir / "dendrite.classification_training.autoclassifier.onnx",
+        )
+
+    def test_blank_classifier_paths_use_the_default(self) -> None:
+        """An empty app-panel value falls back to the input_dir default."""
+        settings = _make_settings(["--input_dir=in", "--soma_classifier_path="])
+        self.assertEqual(settings.soma_classifier_path.parent, Path("in/2p_roi_classifier"))
+
+    def test_explicit_classifier_paths_are_kept(self) -> None:
+        """A supplied model path is not rewritten."""
+        settings = _make_settings(
+            ["--input_dir=in", "--dendrite_classifier_path=/models/d.onnx"]
+        )
+        self.assertEqual(settings.dendrite_classifier_path, Path("/models/d.onnx"))
 
     def test_one_character_argparse_flags_are_renamed(self) -> None:
         """The directory fields have full names, never one-character ones."""

@@ -3,10 +3,12 @@
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_CLASSIFIER_DIR = "/data/2p_roi_classifier"
+CLASSIFIER_DIR_NAME = "2p_roi_classifier"
+SOMA_CLASSIFIER_FILE = "soma.classification_training.autoclassifier.onnx"
+DENDRITE_CLASSIFIER_FILE = "dendrite.classification_training.autoclassifier.onnx"
 
 
 class ClassifierSettings(BaseSettings, cli_parse_args=True):
@@ -33,14 +35,19 @@ class ClassifierSettings(BaseSettings, cli_parse_args=True):
             "files are unpacked. Must be writable."
         ),
     )
-    soma_classifier_path: Path = Field(
-        default=Path(DEFAULT_CLASSIFIER_DIR) / "soma.classification_training.autoclassifier.onnx",
-        description="Path to the soma classifier ONNX model.",
+    soma_classifier_path: Optional[Path] = Field(
+        default=None,
+        description=(
+            "Path to the soma classifier ONNX model. Defaults to "
+            f"input_dir/{CLASSIFIER_DIR_NAME}/{SOMA_CLASSIFIER_FILE}."
+        ),
     )
-    dendrite_classifier_path: Path = Field(
-        default=Path(DEFAULT_CLASSIFIER_DIR)
-        / "dendrite.classification_training.autoclassifier.onnx",
-        description="Path to the dendrite classifier ONNX model.",
+    dendrite_classifier_path: Optional[Path] = Field(
+        default=None,
+        description=(
+            "Path to the dendrite classifier ONNX model. Defaults to "
+            f"input_dir/{CLASSIFIER_DIR_NAME}/{DENDRITE_CLASSIFIER_FILE}."
+        ),
     )
     model_name: Optional[str] = Field(
         default=None,
@@ -70,3 +77,19 @@ class ClassifierSettings(BaseSettings, cli_parse_args=True):
             "files are loaded from there instead of being downloaded."
         ),
     )
+
+    @field_validator("soma_classifier_path", "dendrite_classifier_path", mode="before")
+    @classmethod
+    def _blank_path_is_unset(cls, value: object) -> object:
+        """Treat an empty app-panel value as unset."""
+        return None if value == "" else value
+
+    @model_validator(mode="after")
+    def _default_classifier_paths(self) -> "ClassifierSettings":
+        """Resolve unset classifier paths under ``input_dir``."""
+        classifier_dir = self.input_dir / CLASSIFIER_DIR_NAME
+        if self.soma_classifier_path is None:
+            self.soma_classifier_path = classifier_dir / SOMA_CLASSIFIER_FILE
+        if self.dendrite_classifier_path is None:
+            self.dendrite_classifier_path = classifier_dir / DENDRITE_CLASSIFIER_FILE
+        return self
