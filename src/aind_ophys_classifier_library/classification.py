@@ -11,6 +11,7 @@ import h5py
 import numpy as np
 import roicat
 import sparse
+from aind_pophys_metadata import search
 
 from .utils.model_utils import (
     DOWNLOAD_CHECK_LOCAL_FIRST,
@@ -59,7 +60,7 @@ def file_md5(path: Path) -> str:
 
 
 def find_extraction_files(input_dir: Path) -> Tuple[Path, ...]:
-    """Locate every extraction HDF5 under ``input_dir``.
+    """Locate every extraction HDF5 under ``input_dir``, following symlinked directories.
 
     Parameters
     ----------
@@ -76,7 +77,7 @@ def find_extraction_files(input_dir: Path) -> Tuple[Path, ...]:
     FileNotFoundError
         If no extraction HDF5 is found.
     """
-    matches = tuple(sorted(Path(input_dir).rglob(EXTRACTION_H5_GLOB)))
+    matches = tuple(search(Path(input_dir), EXTRACTION_H5_GLOB))
     if not matches:
         raise FileNotFoundError(
             f"No '{EXTRACTION_H5_GLOB}' found under {input_dir}; "
