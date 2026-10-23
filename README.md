@@ -57,12 +57,9 @@ it.
 
 ### `qc.py`
 Metric content for `quality_control.json`. Metric-producing functions
-(`build_classification_metric`, `build_border_roi_metric`,
-`build_roi_label_curation_metric`, `build_roi_count_metric`,
-`build_positive_count_metric`, `build_border_count_metric`) return metrics;
+(`build_classification_metric`, `build_border_roi_metric`) return metrics;
 `job.run` accumulates them and `write_quality_control_json` writes one document
-per plane. `roi_labels` combines the soma, dendrite and border flags into one
-label per ROI.
+per plane.
 
 ### `settings.py`
 `ClassifierSettings`, a `pydantic-settings` class parsed from the command line
