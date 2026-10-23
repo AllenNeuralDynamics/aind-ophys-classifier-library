@@ -98,34 +98,16 @@ def _write_figures(
 
 def _collect_metrics(
     plane: classification.Plane,
-    result: dict,
-    border: np.ndarray,
     figure_paths: dict,
-    border_size: int,
     results_root: Path,
 ) -> List:
     """Build every QC metric for one plane (the collector pattern)."""
     name = plane.name
     combined = relative_to_root(results_root, figure_paths["combined"])
     border_ref = relative_to_root(results_root, figure_paths["border_rois"])
-    soma_ref = relative_to_root(results_root, figure_paths["soma_predictions"])
-    dendrite_ref = relative_to_root(results_root, figure_paths["dendrite_predictions"])
-
-    soma = result["soma_predictions"]
-    dendrite = result["dendrite_predictions"]
-    num_rois = int(len(soma))
-
-    labels = qc.roi_labels(soma, dendrite, border)
     return [
         qc.build_classification_metric(name, combined),
         qc.build_border_roi_metric(name, border_ref),
-        qc.build_roi_label_curation_metric(name, labels, combined),
-        qc.build_roi_count_metric(name, num_rois, combined),
-        qc.build_positive_count_metric(name, "Soma", int(soma.sum()), num_rois, soma_ref),
-        qc.build_positive_count_metric(
-            name, "Dendrite", int(dendrite.sum()), num_rois, dendrite_ref
-        ),
-        qc.build_border_count_metric(name, int(border.sum()), border_size, border_ref),
     ]
 
 
@@ -310,14 +292,7 @@ def _classify_plane(
         classification.write_classification_h5(plane, result, border)
 
         stage.output_parameters = _output_parameters(result, border)
-        metrics = _collect_metrics(
-            plane,
-            result,
-            border,
-            figure_paths,
-            settings.border_size,
-            results_root,
-        )
+        metrics = _collect_metrics(plane, figure_paths, results_root)
         qc.write_quality_control_json(qc.build_quality_control(metrics), plane.output_dir)
     logger.info("Wrote classification outputs for %s", plane.name)
 
