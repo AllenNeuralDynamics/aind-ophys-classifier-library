@@ -2,34 +2,24 @@
 
 from datetime import datetime as dt
 from pathlib import Path
-from typing import Any, List, Optional, Sequence
+from typing import List
 
 import pytz
 from aind_data_schema.core.quality_control import (
-    CurationMetric,
     QCMetric,
     QCStatus,
     QualityControl,
-    Stage,
     Status,
 )
-from aind_data_schema_models.modalities import Modality
 from aind_pophys_metadata import quality_control as shared_qc
 
 _SEATTLE_TZ = pytz.timezone("America/Los_Angeles")
 
 EVALUATION = "Classification"
-METRIC_TYPE = "Operational QC"
-CURATION_TYPE = "ROI soma/dendrite/border label"
+METRIC_TYPE = "Informational"
 
 REASONABLE_OPTIONS = ["Reasonable", "Unreasonable"]
 REASONABLE_STATUS = [Status.PASS, Status.FAIL]
-
-LABEL_SOMA = "soma"
-LABEL_DENDRITE = "dendrite"
-LABEL_BOTH = "soma+dendrite"
-LABEL_NEITHER = "unclassified"
-BORDER_SUFFIX = "|border"
 
 
 def _automated_pass() -> QCStatus:
@@ -41,44 +31,46 @@ def _automated_pass() -> QCStatus:
     )
 
 
-def _numeric_metric(
-    name: str,
-    value: Any,
-    description: str,
-    reference: Optional[str],
-) -> QCMetric:
-    """Build an automatically-derived numeric QCMetric.
+def _passed_dropdown(name: str, reference: str, description: str) -> QCMetric:
+    """Build a Reasonable/Unreasonable dropdown passed by automation.
+
+    The passing option is selected and the status history holds one
+    automated PASS, so the metric needs no manual review.
 
     Parameters
     ----------
     name : str
         Metric name, already scoped to the plane.
-    value : Any
-        The measured value (a scalar or a small dict).
+    reference : str
+        Figure path relative to the results root.
     description : str
         Reviewer-facing description.
-    reference : str or None
-        Figure path relative to the results root.
 
     Returns
     -------
     QCMetric
-        The populated metric.
+        The passed dropdown metric.
     """
-    return QCMetric(
+    pending = shared_qc.dropdown_metric(
         name=name,
-        modality=Modality.POPHYS,
-        stage=Stage.PROCESSING,
-        tags={"evaluation": EVALUATION, "type": METRIC_TYPE},
-        description=description,
+        evaluation=EVALUATION,
+        options=REASONABLE_OPTIONS,
+        status=REASONABLE_STATUS,
         reference=reference,
-        status_history=[_automated_pass()],
-        value=value,
+        description=description,
+        metric_type=METRIC_TYPE,
+    )
+    passing_option = REASONABLE_OPTIONS[REASONABLE_STATUS.index(Status.PASS)]
+    return pending.model_copy(
+        update={
+            "value": pending.value.model_copy(update={"value": passing_option}),
+            "status_history": [_automated_pass()],
+        }
     )
 
 
 def build_classification_metric(plane_id: str, reference: str) -> QCMetric:
-    """Reviewer dropdown over the combined-classifications figure.
+    """Passed dropdown over the combined-classifications figure.
 
     Parameters
     ----------
@@ -90,21 +82,17 @@ def build_classification_metric(plane_id: str, reference: str) -> QCMetric:
     Returns
     -------
     QCMetric
-        A pending dropdown metric.
+        An automatically passed dropdown metric.
     """
-    return shared_qc.dropdown_metric(
+    return _passed_dropdown(
         name=f"{plane_id} Classification",
-        evaluation=EVALUATION,
-        options=REASONABLE_OPTIONS,
-        status=REASONABLE_STATUS,
         reference=reference,
-        description="Classification of ROIs as soma or dendrite",
-        metric_type=METRIC_TYPE,
+        description="Classification of ROIs as soma and/or dendrite.",
     )
 
 
 def build_border_roi_metric(plane_id: str, reference: str) -> QCMetric:
-    """Reviewer dropdown over the border-ROI figure.
+    """Passed dropdown over the border-ROI figure.
 
     Parameters
     ----------
@@ -116,173 +104,12 @@ def build_border_roi_metric(plane_id: str, reference: str) -> QCMetric:
     Returns
     -------
     QCMetric
-        A pending dropdown metric.
+        An automatically passed dropdown metric.
     """
-    return shared_qc.dropdown_metric(
+    return _passed_dropdown(
         name=f"{plane_id} Border ROIs",
-        evaluation=EVALUATION,
-        options=REASONABLE_OPTIONS,
-        status=REASONABLE_STATUS,
         reference=reference,
-        description="ROIs that are on the border of the field of view",
-        metric_type=METRIC_TYPE,
-    )
-
-
-def roi_labels(
-    soma_predictions: Sequence,
-    dendrite_predictions: Sequence,
-    border_labels: Sequence,
-) -> List[str]:
-    """Combine the three per-ROI booleans into one label per ROI.
-
-    Each label is ``soma``, ``dendrite``, ``soma+dendrite`` or ``unclassified``,
-    suffixed ``|border`` for a border ROI. List position is the ROI index.
-
-    Parameters
-    ----------
-    soma_predictions : sequence
-        Per-ROI soma prediction, truthy for positive.
-    dendrite_predictions : sequence
-        Per-ROI dendrite prediction, truthy for positive.
-    border_labels : sequence
-        Per-ROI border flag, truthy when the ROI touches the border.
-
-    Returns
-    -------
-    list of str
-        One label per ROI, in ROI order.
-
-    Raises
-    ------
-    ValueError
-        If the three sequences are not the same length.
-    """
-    lengths = {
-        len(soma_predictions),
-        len(dendrite_predictions),
-        len(border_labels),
-    }
-    if len(lengths) != 1:
-        raise ValueError(
-            "soma_predictions, dendrite_predictions and border_labels must "
-            f"be the same length; got {sorted(lengths)}. Per-ROI labels are "
-            "paired by position, so a mismatch would misalign them."
-        )
-
-    labels = []
-    for soma, dendrite, border in zip(soma_predictions, dendrite_predictions, border_labels):
-        if soma and dendrite:
-            label = LABEL_BOTH
-        elif soma:
-            label = LABEL_SOMA
-        elif dendrite:
-            label = LABEL_DENDRITE
-        else:
-            label = LABEL_NEITHER
-        labels.append(f"{label}{BORDER_SUFFIX}" if border else label)
-    return labels
-
-
-def build_roi_label_curation_metric(
-    plane_id: str,
-    labels: List[str],
-    reference: str,
-) -> CurationMetric:
-    """Per-ROI labels as a core v2 ``CurationMetric``.
-
-    Parameters
-    ----------
-    plane_id : str
-        Plane identifier used in the metric name.
-    labels : list of str
-        One label per ROI, from :func:`roi_labels`.
-    reference : str
-        Path to the combined figure, relative to the results root.
-
-    Returns
-    -------
-    CurationMetric
-        The per-ROI label curation metric.
-    """
-    return CurationMetric(
-        name=f"{plane_id} ROI classification labels",
-        modality=Modality.POPHYS,
-        stage=Stage.PROCESSING,
-        type=CURATION_TYPE,
-        value=list(labels),
-        description=(
-            "Per-ROI classification label, indexed by ROI in suite2p order. "
-            f"One of '{LABEL_SOMA}', '{LABEL_DENDRITE}', '{LABEL_BOTH}' or "
-            f"'{LABEL_NEITHER}', suffixed '{BORDER_SUFFIX}' when the ROI "
-            "touches the field-of-view border."
-        ),
-        reference=reference,
-        tags={"evaluation": EVALUATION, "type": METRIC_TYPE},
-        status_history=[_automated_pass()],
-    )
-
-
-def build_roi_count_metric(plane_id: str, num_rois: int, reference: str) -> QCMetric:
-    """Total ROI count for the plane."""
-    return _numeric_metric(
-        name=f"{plane_id} ROI count",
-        value=int(num_rois),
-        description="Number of ROIs classified in this plane",
-        reference=reference,
-    )
-
-
-def build_positive_count_metric(
-    plane_id: str,
-    label: str,
-    count: int,
-    num_rois: int,
-    reference: str,
-) -> QCMetric:
-    """Count and fraction of ROIs a classifier called positive.
-
-    Parameters
-    ----------
-    plane_id : str
-        Plane identifier used in the metric name.
-    label : str
-        ``"Soma"`` or ``"Dendrite"``.
-    count : int
-        Number of positive ROIs.
-    num_rois : int
-        Total ROI count, used for the fraction.
-    reference : str
-        Figure path relative to the results root.
-
-    Returns
-    -------
-    QCMetric
-        The populated metric.
-    """
-    return _numeric_metric(
-        name=f"{plane_id} {label}-positive ROIs",
-        value={
-            "count": int(count),
-            "fraction": (float(count) / num_rois) if num_rois else 0.0,
-        },
-        description=f"ROIs classified as {label.lower()}",
-        reference=reference,
-    )
-
-
-def build_border_count_metric(
-    plane_id: str,
-    count: int,
-    border_size: int,
-    reference: str,
-) -> QCMetric:
-    """Border-ROI count, recording the border width that produced it."""
-    return _numeric_metric(
-        name=f"{plane_id} Border ROI count",
-        value={"count": int(count), "border_size_px": int(border_size)},
-        description=("ROIs within border_size pixels of the field-of-view edge"),
-        reference=reference,
+        description="ROIs on or near the border of the field of view.",
     )
 
 
