@@ -104,37 +104,6 @@ def file_md5(path: Path) -> str:
     return md5.hexdigest()
 
 
-def find_um_per_pixel(input_dir: Path) -> float:
-    """Find the um_per_pixel value from the session.json file.
-
-    Parameters
-    ----------
-    input_dir : Path
-        Path to the input directory.
-
-    Returns
-    -------
-    float
-        The um_per_pixel value
-    """
-    try:
-        session_json_fp = next(input_dir.glob("session.json"))
-    except StopIteration:
-        session_json_fp = next(input_dir.glob("*/session.json"))
-    with open(session_json_fp, "r") as j:
-        session_data = json.load(j)
-    for data_stream in session_data["data_streams"]:
-        if data_stream.get("ophys_fovs"):
-            fov = data_stream["ophys_fovs"][0]
-            um_per_pixel = (
-                float(fov["fov_scale_factor"])
-                * (UnitRegistry().parse_expression(fov["fov_scale_factor_unit"]))
-                .to("um/pixel")
-                .magnitude
-            )
-    return um_per_pixel
-
-
 def prepare_plane(extraction_file: Path, output_dir: Path) -> List[Plane]:
     """Prepare a plane for classification by loading the ROIs and creating the output directory.
 
