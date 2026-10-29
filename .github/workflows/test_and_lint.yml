@@ -4,10 +4,14 @@ on:
   pull_request:
     branches:
       - main
+      - dev
 
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      # roicat imports tkinter, which the runner's system Python lacks.
+      UV_PYTHON_PREFERENCE: only-managed
     strategy:
       matrix:
         python-version: [ '3.11', '3.12' ]
