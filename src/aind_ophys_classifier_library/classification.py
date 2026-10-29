@@ -275,48 +275,7 @@ def write_qc_metrics(output_dir: Path, unique_id: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-i", "--input-dir", type=str, help="Input directory", default="/data"
-    )
-    parser.add_argument(
-        "-o", "--output-dir", type=str, help="Output directory", default="/results"
-    )
-    parser.add_argument(
-        "--tmp-dir",
-        type=str,
-        default="/scratch",
-        help="Directory into which to write temporary files",
-    )
-    parser.add_argument(
-        "--soma-classifier-path",
-        type=str,
-        default="/data/2p_roi_classifier/soma.classification_training.autoclassifier.onnx",
-        help="Path of the classifier model, comma-delimited",
-    )
-    parser.add_argument(
-        "--dendrite-classifier-path",
-        type=str,
-        default="/data/2p_roi_classifier/dendrite.classification_training.autoclassifier.onnx",
-        help="Path of the classifier model, comma-delimited",
-    )
-    parser.add_argument(
-        "--model-name",
-        type=str,
-        default=None,
-        help=(
-            "Identifier recorded in data_process.json. "
-            "Defaults to the directory name of --soma-classifier-path."
-        ),
-    )
-    parser.add_argument(
-        "--border-size",
-        type=int,
-        default=10,
-        help="Distance from border for ROI to be classified on the border",
-    )
     start_time = dt.now(tz.utc)
-    args = parser.parse_args()
     input_dir = Path(args.input_dir).resolve()
     output_dir = Path(args.output_dir).resolve()
 
