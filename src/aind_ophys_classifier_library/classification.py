@@ -185,64 +185,6 @@ def classify_border_rois(rois: np.array, border_size: int) -> np.array:
     return border_rois_bool
 
 
-def write_qc_metrics(output_dir: Path, unique_id: str) -> None:
-    """Write QC metrics to output directory
-
-    Parameters
-    ----------
-    output_dir : Path
-        Path to the output directory.
-    unique_id : str
-        Unique identifier for the plane.
-    """
-
-    metric = QCMetric(
-        name=f"{unique_id} Classification",
-        description="Classification of ROIs as soma or dendrite",
-        reference=f"{unique_id}/classification/{unique_id}_combined_classifications.png",
-        status_history=[
-            QCStatus(evaluator="Automated", timestamp=dt.now(), status=Status.PASS)
-        ],
-        value=DropdownMetric(
-            value="Reasonable",
-            options=[
-                "Reasonable",
-                "Unreasonable",
-            ],
-            status=[
-                Status.PASS,
-                Status.FAIL,
-            ],
-        ),
-    )
-
-    with open(output_dir / f"{unique_id}_classification_metric.json", "w") as f:
-        json.dump(json.loads(metric.model_dump_json()), f, indent=4)
-
-    metric = QCMetric(
-        name=f"{unique_id} Border ROIs",
-        description="ROIs that are on the border of the FOV",
-        reference=f"{unique_id}/classification/{unique_id}_border_rois.png",
-        status_history=[
-            QCStatus(evaluator="Automated", timestamp=dt.now(), status=Status.PASS)
-        ],
-        value=DropdownMetric(
-            value="Reasonable",
-            options=[
-                "Reasonable",
-                "Unreasonable",
-            ],
-            status=[
-                Status.PASS,
-                Status.FAIL,
-            ],
-        ),
-    )
-
-    with open(output_dir / f"{unique_id}_border_roi_metric.json", "w") as f:
-        json.dump(json.loads(metric.model_dump_json()), f, indent=4)
-
-
 if __name__ == "__main__":
     start_time = dt.now(tz.utc)
     input_dir = Path(args.input_dir).resolve()
