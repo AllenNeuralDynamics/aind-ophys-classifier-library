@@ -1,0 +1,145 @@
+"""Tests for ClassifierSettings and its CLI parsing."""
+
+import sys
+import typing
+import unittest
+from pathlib import Path
+from typing import Any, List, Optional
+from unittest.mock import patch
+
+from aind_ophys_classifier_library.settings import ClassifierSettings
+
+
+def _make_settings(
+    argv: Optional[List[str]] = None,
+    **kwargs: Any,
+) -> ClassifierSettings:
+    """Construct ClassifierSettings with a controlled sys.argv."""
+    with patch.object(sys, "argv", ["run_capsule.py"] + list(argv or [])):
+        return ClassifierSettings(**kwargs)
+
+
+def _sample_cli_value(annotation: Any) -> str:
+    """Return a valid ``--name=value`` payload for a field annotation."""
+    origin = typing.get_origin(annotation)
+    if origin is typing.Union:
+        args = [a for a in typing.get_args(annotation) if a is not type(None)]
+        annotation = args[0]
+    if annotation is bool:
+        return "true"
+    if annotation is int:
+        return "2"
+    if annotation is float:
+        return "1.5"
+    if annotation is Path:
+        return "/tmp/classifier-test"
+    return "sample"
+
+
+class TestClassifierSettingsDefaults(unittest.TestCase):
+    """Every field's default value."""
+
+    def test_defaults(self) -> None:
+        """Defaults are the Code Ocean mount paths and the tuned values."""
+        settings = _make_settings()
+        self.assertEqual(settings.input_dir, Path("/data"))
+        self.assertEqual(settings.output_dir, Path("/results"))
+        self.assertEqual(settings.tmp_dir, Path("/scratch"))
+        self.assertEqual(
+            settings.soma_classifier_path,
+            Path("/data/2p_roi_classifier/soma.classification_training.autoclassifier.onnx"),
+        )
+        self.assertEqual(
+            settings.dendrite_classifier_path,
+            Path("/data/2p_roi_classifier/dendrite.classification_training.autoclassifier.onnx"),
+        )
+        self.assertIsNone(settings.model_name)
+        self.assertEqual(settings.border_size, 10)
+        self.assertIsNone(settings.um_per_pixel)
+        self.assertIsNone(settings.roinet_dir)
+
+    def test_classifier_paths_follow_input_dir(self) -> None:
+        """Unset model paths resolve under a task-relative input_dir."""
+        settings = _make_settings(["--input_dir=../data"])
+        model_dir = Path("../data/2p_roi_classifier")
+        self.assertEqual(
+            settings.soma_classifier_path,
+            model_dir / "soma.classification_training.autoclassifier.onnx",
+        )
+        self.assertEqual(
+            settings.dendrite_classifier_path,
+            model_dir / "dendrite.classification_training.autoclassifier.onnx",
+        )
+
+    def test_blank_classifier_paths_use_the_default(self) -> None:
+        """An empty app-panel value falls back to the input_dir default."""
+        settings = _make_settings(["--input_dir=in", "--soma_classifier_path="])
+        self.assertEqual(settings.soma_classifier_path.parent, Path("in/2p_roi_classifier"))
+
+    def test_explicit_classifier_paths_are_kept(self) -> None:
+        """A supplied model path is not rewritten."""
+        settings = _make_settings(
+            ["--input_dir=in", "--dendrite_classifier_path=/models/d.onnx"]
+        )
+        self.assertEqual(settings.dendrite_classifier_path, Path("/models/d.onnx"))
+
+    def test_one_character_argparse_flags_are_renamed(self) -> None:
+        """The directory fields have full names, never one-character ones."""
+        for name in ("i", "o"):
+            self.assertNotIn(name, ClassifierSettings.model_fields)
+        self.assertIn("input_dir", ClassifierSettings.model_fields)
+        self.assertIn("output_dir", ClassifierSettings.model_fields)
+
+    def test_hyphenated_arguments_are_rejected(self) -> None:
+        """pydantic-settings takes underscores only."""
+        with self.assertRaises(SystemExit):
+            _make_settings(["--input-dir=/data"])
+
+
+class TestSampleCliValue(unittest.TestCase):
+    """The helper the app-panel contract test drives every field with."""
+
+    def test_covers_every_annotation_this_settings_class_uses(self) -> None:
+        """Each supported annotation yields a parseable payload."""
+        self.assertEqual(_sample_cli_value(bool), "true")
+        self.assertEqual(_sample_cli_value(int), "2")
+        self.assertEqual(_sample_cli_value(float), "1.5")
+        self.assertTrue(_sample_cli_value(Path).startswith("/"))
+        self.assertEqual(_sample_cli_value(str), "sample")
+
+    def test_optional_unwraps_to_the_inner_type(self) -> None:
+        """Optional[float] is driven as a float, not as a string."""
+        self.assertEqual(_sample_cli_value(typing.Optional[float]), "1.5")
+
+
+class TestAppPanelContract(unittest.TestCase):
+    """Every field must be drivable by a Code Ocean app panel."""
+
+    def test_no_single_character_field_names(self) -> None:
+        """No field name is one character long."""
+        offenders = [name for name in ClassifierSettings.model_fields if len(name) == 1]
+        self.assertEqual(offenders, [])
+
+    def test_every_field_parses_as_named_argument(self) -> None:
+        """Each field accepts the ``--name=value`` form the panel emits."""
+        for name, field in ClassifierSettings.model_fields.items():
+            with self.subTest(field=name):
+                value = _sample_cli_value(field.annotation)
+                settings = _make_settings([f"--{name}={value}"])
+                self.assertIsNotNone(getattr(settings, name))
+
+    def test_field_names_use_underscores(self) -> None:
+        """pydantic-settings style: no hyphens in field names."""
+        offenders = [name for name in ClassifierSettings.model_fields if "-" in name]
+        self.assertEqual(offenders, [])
+
+    def test_every_field_has_a_description(self) -> None:
+        """A panel with no descriptions is unusable by an operator."""
+        missing = [
+            name for name, field in ClassifierSettings.model_fields.items() if not field.description
+        ]
+        self.assertEqual(missing, [])
+
+
+if __name__ == "__main__":
+    unittest.main()
