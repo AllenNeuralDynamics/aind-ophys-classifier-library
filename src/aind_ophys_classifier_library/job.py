@@ -219,7 +219,7 @@ def _prepare(settings: ClassifierSettings) -> _Prepared:
     _require_classifiers(settings)
     model_name = settings.model_name or settings.soma_classifier_path.parent.name
     network_files_dir, download_method = classification.resolve_network_files_dir(
-        settings.tmp_dir, settings.roinet_dir
+        settings.input_dir, settings.tmp_dir, settings.roinet_dir
     )
 
     input_dir = settings.input_dir.resolve()

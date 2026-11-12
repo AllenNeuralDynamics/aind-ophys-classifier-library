@@ -7,6 +7,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CLASSIFIER_DIR_NAME = "2p_roi_classifier"
+ROINET_DIR_NAME = "roinet"
 SOMA_CLASSIFIER_FILE = "soma.classification_training.autoclassifier.onnx"
 DENDRITE_CLASSIFIER_FILE = "dendrite.classification_training.autoclassifier.onnx"
 
@@ -73,8 +74,9 @@ class ClassifierSettings(BaseSettings, cli_parse_args=True):
     roinet_dir: Optional[Path] = Field(
         default=None,
         description=(
-            "Directory holding a pre-staged ROInet.zip. When set, the network "
-            "files are loaded from there instead of being downloaded."
+            "Directory holding a pre-staged ROInet.zip, loaded instead of "
+            f"downloaded. When unset, input_dir/{ROINET_DIR_NAME} and "
+            f"input_dir/{CLASSIFIER_DIR_NAME} are searched for one."
         ),
     )
 
