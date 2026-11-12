@@ -75,7 +75,9 @@ Also `build_classification_code`, `process_name`, and the
 this step's process type.
 
 ### `utils/model_utils.py`
-Model provenance. `model_provenance_records` records the SHA-256 of the two
+Model discovery and provenance. `discover_roinet_dir` finds a mounted
+`ROInet.zip` under `input_dir`, copies it into `tmp_dir` and sets `TORCH_HOME`
+(see Settings). `model_provenance_records` records the SHA-256 of the two
 files that decide what the embedding produces and that no package version pins
 — `ROInet.zip` and the Torchvision ConvNeXt-Tiny checkpoint resolved under
 `$TORCH_HOME` — onto `code.parameters`. This is provenance, not verification:
@@ -98,11 +100,18 @@ classification QC metric references.
 | `model_name` | derived | Identifier recorded in `processing.json`; defaults to the directory name of `soma_classifier_path`. |
 | `border_size` | `10` | Pixels from the FOV edge for an ROI to count as a border ROI. |
 | `um_per_pixel` | from metadata | Override, for metadata that does not carry the scale. |
-| `roinet_dir` | unset | Directory holding a pre-staged `ROInet.zip`. |
+| `roinet_dir` | unset | Directory holding a pre-staged `ROInet.zip`. When unset, `input_dir/roinet` then `input_dir/2p_roi_classifier` are searched for one. |
 
-Set `roinet_dir` inside the pipeline. `tmp_dir` is created fresh per task, so
-without a pre-staged archive ROInet's cache always misses and every task
-re-downloads ~105 MB from osf.io.
+With `roinet_dir` unset, the first of `input_dir/roinet` and
+`input_dir/2p_roi_classifier` that holds a `ROInet.zip` is used. The archive is
+copied into `tmp_dir/roinet`, where ROInet unpacks; the mount itself is
+read-only. `TORCH_HOME` is set to `<that directory>/torch` when it holds
+`hub/checkpoints/convnext_tiny-983f1562.pth`, and otherwise to
+`tmp_dir/roinet/torch`. A `TORCH_HOME` already in the environment is kept. An
+explicit `roinet_dir` is used as given and leaves `TORCH_HOME` alone.
+
+With no archive found, ROInet downloads ~105 MB from osf.io into `tmp_dir`,
+which is created fresh per task, so every task downloads again.
 
 ## Outputs
 

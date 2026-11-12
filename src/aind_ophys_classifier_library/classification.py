@@ -17,6 +17,7 @@ from .utils.model_utils import (
     DOWNLOAD_CHECK_LOCAL_FIRST,
     DOWNLOAD_FORCE_LOCAL,
     ROINET_ZIP,
+    discover_roinet_dir,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,19 +161,28 @@ def classify_border_rois(rois: np.ndarray, border_size: int) -> np.ndarray:
 
 
 def resolve_network_files_dir(
+    input_dir: Path,
     tmp_dir: Path,
     roinet_dir: Optional[Path],
 ) -> Tuple[Path, str]:
     """Choose the ROInet weights directory and download method.
 
-    Returns ``roinet_dir`` with ``force_local`` when it holds ``ROInet.zip``;
-    otherwise ``tmp_dir`` with ``check_local_first``, logging a warning that the
-    archive will be downloaded.
+    With ``roinet_dir`` set, returns it with ``force_local``. With it unset, a
+    ``ROInet.zip`` found under ``input_dir`` is copied into ``tmp_dir``, that
+    copy's directory is returned with ``force_local``, and ``TORCH_HOME`` is
+    configured (see
+    :func:`~aind_ophys_classifier_library.utils.model_utils.discover_roinet_dir`).
+    When no archive is found, returns ``tmp_dir`` with ``check_local_first``,
+    logging a warning that the archive will be downloaded.
 
     Parameters
     ----------
+    input_dir : Path
+        Input directory, searched for a mounted ``ROInet.zip`` when
+        ``roinet_dir`` is unset.
     tmp_dir : Path
-        Scratch directory, used when no pre-staged archive is available.
+        Scratch directory, receiving the staged archive and, when no archive
+        is available, the download.
     roinet_dir : Path or None
         Directory holding a pre-staged ``ROInet.zip``.
 
@@ -186,6 +196,9 @@ def resolve_network_files_dir(
     FileNotFoundError
         If ``roinet_dir`` is set but holds no ``ROInet.zip``.
     """
+    if roinet_dir is None:
+        roinet_dir = discover_roinet_dir(input_dir, tmp_dir)
+
     if roinet_dir is not None:
         staged = Path(roinet_dir) / ROINET_ZIP
         if staged.is_file():
